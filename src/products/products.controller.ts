@@ -23,7 +23,6 @@ export class ProductsController {
   @Public()
   @Get('search')
   async search(@Query('q') query: string): Promise<Product[]> {
-    console.log('entrada a search', query);
     return this.productsService.search(query);
   }
 
