@@ -10,6 +10,7 @@ import { MediaModule } from './media/media.module';
 import { CartModule } from './cart/cart.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
+import { ShippingModule } from './shipping/shipping.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PaymentsModule } from './payments/payments.module';
     CartModule,
     OrdersModule,
     PaymentsModule,
+    ShippingModule,
   ],
 })
 export class AppModule {}

@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -27,12 +28,14 @@
     "@nestjs/mongoose": "^11.0.3",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/schedule": "^6.0.1",
     "@paypal/paypal-server-sdk": "^1.1.0",
     "@types/braintree": "^3.4.0",
     "@vendure/admin-ui-plugin": "^3.4.2",
     "@vendure/asset-server-plugin": "^3.4.2",
     "@vendure/core": "^3.4.2",
     "@vendure/payments-plugin": "^3.4.2",
+    "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
     "braintree": "^3.33.1",
     "class-transformer": "^0.5.1",
@@ -43,7 +46,7 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
