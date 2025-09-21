@@ -64,6 +64,7 @@ export class PaymentsService {
 
   async capturePayment(paymentId: string, payerId?: string): Promise<PaymentResponseDto> {
     try {
+      console.log("entramos en capturePayment");
       const payment = await this.paymentModel.findById(paymentId);
       if (!payment) {
         throw new NotFoundException('Payment not found');
@@ -74,19 +75,23 @@ export class PaymentsService {
       }
 
       // Capturar el pago en PayPal
+      console.log("capturamos el pago en paypal");
       const paypalResponse = await this.paypalService.capturePayment(
         payment.providerPaymentId,
         payerId,
       );
 
+      console.log("paypalResponse", paypalResponse);
       // Actualizar el estado del pago
       payment.status = PaymentStatus.COMPLETED;
       payment.captureId = paypalResponse.id;
       payment.payerId = payerId;
+      console.log("guardamos el pago en la base de datos");
       await payment.save();
-
+      console.log("pago guardado en la base de datos");
       this.logger.log(`Payment captured: ${paymentId}`);
 
+      console.log("retornamos el pago");
       return {
         id: payment._id?.toString() || '',
         status: paypalResponse.status,
@@ -198,6 +203,78 @@ export class PaymentsService {
     } catch (error) {
       this.logger.error('Error updating payment status:', error);
       throw error;
+    }
+  }
+
+  async capturePaymentByToken(paypalToken: string, payerId: string): Promise<PaymentResponseDto> {
+    try {
+      console.log("Buscando pago por token PayPal:", paypalToken);
+      
+      // Buscar el pago por el token de PayPal (providerPaymentId)
+      const payment = await this.paymentModel.findOne({ 
+        providerPaymentId: paypalToken 
+      });
+      
+      if (!payment) {
+        throw new NotFoundException(`Payment not found for PayPal token: ${paypalToken}`);
+      }
+
+      if (payment.status !== PaymentStatus.PENDING) {
+        throw new BadRequestException('Payment cannot be captured');
+      }
+
+      // Capturar el pago en PayPal
+      console.log("Capturando pago en PayPal");
+      const paypalResponse = await this.paypalService.capturePayment(paypalToken, payerId);
+
+      console.log("PayPal Response:", paypalResponse);
+      
+      // Actualizar el estado del pago
+      payment.status = PaymentStatus.COMPLETED;
+      payment.captureId = paypalResponse.id;
+      payment.payerId = payerId;
+      
+      await payment.save();
+      this.logger.log(`Payment captured by token: ${paypalToken} -> ${payment._id}`);
+
+      return {
+        id: payment._id?.toString() || '',
+        status: paypalResponse.status,
+      };
+    } catch (error) {
+      this.logger.error('Error capturing payment by token:', error);
+      throw new BadRequestException(`Payment capture failed: ${error.message}`);
+    }
+  }
+
+  async cancelPaymentByToken(paypalToken: string): Promise<void> {
+    try {
+      console.log("Cancelando pago por token PayPal:", paypalToken);
+      
+      // Buscar el pago por el token de PayPal
+      const payment = await this.paymentModel.findOne({ 
+        providerPaymentId: paypalToken 
+      });
+      
+      if (!payment) {
+        this.logger.warn(`Payment not found for cancellation with token: ${paypalToken}`);
+        return; // No lanzar error, puede ser que el pago no se haya creado aún
+      }
+
+      if (payment.status !== PaymentStatus.PENDING) {
+        this.logger.warn(`Payment ${payment._id} cannot be cancelled, current status: ${payment.status}`);
+        return;
+      }
+
+      // Actualizar estado en la base de datos
+      payment.status = PaymentStatus.CANCELLED;
+      payment.errorMessage = 'Payment cancelled by user';
+      await payment.save();
+
+      this.logger.log(`Payment cancelled by token: ${paypalToken} -> ${payment._id}`);
+    } catch (error) {
+      this.logger.error('Error cancelling payment by token:', error);
+      throw new BadRequestException(`Payment cancellation failed: ${error.message}`);
     }
   }
 }

@@ -22,8 +22,8 @@ export class PayPalService {
   }
 
   private initializePayPal() {
-    const clientId = this.configService.get<string>('PAYPAL_CLIENT_ID');
-    const clientSecret = this.configService.get<string>('PAYPAL_CLIENT_SECRET');
+    const clientId = 'ASLRgRIUQBs1Z8q7eJgWEhAUGq7rbFOjy4Mh19cBMkO3IROJ2hEKwwwMNF2whP5A56W4nBUe3-pRe85w'
+    const clientSecret = 'EJKFA2Q0ge6sDZNjzRpvKOZdZdGHLnsc8GjFkLGQbxY-DxJAyQYMtqOlkGxl9Xt3wUVOU5NWe_LXmkbv'
     const environment = this.configService.get<string>('PAYPAL_ENVIRONMENT', 'sandbox');
 
     if (!clientId || !clientSecret) {
@@ -76,8 +76,8 @@ export class PayPalService {
           brandName: 'Nabra XR',
           landingPage: OrderApplicationContextLandingPage.NoPreference,
           userAction: OrderApplicationContextUserAction.PayNow,
-          returnUrl: returnUrl || `${this.configService.get('BASE_URL')}/payments/success`,
-          cancelUrl: cancelUrl || `${this.configService.get('BASE_URL')}/payments/cancel`,
+          returnUrl: `https://9dbdcf7272a6.ngrok-free.app/payments/paypal/success`,
+          cancelUrl: `https://9dbdcf7272a6.ngrok-free.app/payments/paypal/cancel`,
         },
       };
 
