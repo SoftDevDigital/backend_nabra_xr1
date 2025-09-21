@@ -8,6 +8,8 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
 import { Review, ReviewSchema } from '../reviews/schemas/review.schema';
+import { Promotion, PromotionSchema } from '../promotions/schemas/promotion.schema';
+import { Coupon, CouponSchema } from '../promotions/schemas/coupon.schema';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { Review, ReviewSchema } from '../reviews/schemas/review.schema';
       { name: Order.name, schema: OrderSchema },
       { name: Payment.name, schema: PaymentSchema },
       { name: Review.name, schema: ReviewSchema },
+      { name: Promotion.name, schema: PromotionSchema },
+      { name: Coupon.name, schema: CouponSchema },
     ]),
   ],
   controllers: [AdminSimpleController],

@@ -84,4 +84,20 @@ export class CartController {
   async getCartSummary(@Request() req) {
     return this.cartService.getCartSummary(req.user.userId);
   }
+
+  @Get('summary-with-discounts')
+  async getCartSummaryWithDiscounts(
+    @Request() req,
+    @Query('couponCode') couponCode?: string,
+  ) {
+    return this.cartService.getCartSummaryWithDiscounts(req.user.userId, couponCode);
+  }
+
+  @Post('apply-coupon')
+  async applyCoupon(
+    @Request() req,
+    @Body() body: { couponCode: string },
+  ) {
+    return this.cartService.getCartSummaryWithDiscounts(req.user.userId, body.couponCode);
+  }
 }

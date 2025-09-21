@@ -12,12 +12,14 @@ import { AddToCartDto } from './dtos/add-to-cart.dto';
 import { UpdateCartDto } from './dtos/update-cart.dto';
 import { Types } from 'mongoose';
 import { ProductsService } from '../products/products.service';
+import { DiscountCalculatorService } from '../promotions/discount-calculator.service';
 
 @Injectable()
 export class CartService {
   constructor(
     @InjectModel(Cart.name) private cartModel: Model<Cart>,
     @Inject(forwardRef(() => ProductsService)) private productsService: ProductsService,
+    @Inject(forwardRef(() => DiscountCalculatorService)) private discountCalculatorService: DiscountCalculatorService,
   ) {}
 
   async getCart(userId: string) {
@@ -281,5 +283,67 @@ export class CartService {
       estimatedTotal,
       currency: 'USD',
     };
+  }
+
+  async getCartSummaryWithDiscounts(userId: string, couponCode?: string): Promise<{
+    cartSummary: any;
+    discounts: any;
+    finalTotal: number;
+  }> {
+    try {
+      // Obtener resumen básico del carrito
+      const cartSummary = await this.getCartSummary(userId);
+      
+      if (cartSummary.items.length === 0) {
+        return {
+          cartSummary,
+          discounts: { appliedPromotions: [], totalDiscount: 0 },
+          finalTotal: 0,
+        };
+      }
+
+      // Preparar items para el calculador de descuentos
+      const cartItems = cartSummary.items.map(item => ({
+        productId: item.product._id,
+        cartItemId: item._id,
+        productName: item.product.name,
+        category: item.product.category || 'general',
+        quantity: item.quantity,
+        price: item.product.price,
+        size: item.size,
+      }));
+
+      // Calcular descuentos
+      const discounts = await this.discountCalculatorService.calculateDiscounts(userId, {
+        couponCode,
+        cartItems,
+        totalAmount: cartSummary.subtotal,
+      });
+
+      const finalTotal = Math.max(0, cartSummary.estimatedTotal - discounts.totalDiscount);
+
+      return {
+        cartSummary: {
+          ...cartSummary,
+          originalTotal: cartSummary.estimatedTotal,
+        },
+        discounts,
+        finalTotal: Math.round(finalTotal * 100) / 100,
+      };
+
+    } catch (error) {
+      // Si falla el cálculo de descuentos, retornar carrito sin descuentos
+      const cartSummary = await this.getCartSummary(userId);
+      return {
+        cartSummary,
+        discounts: { 
+          success: false, 
+          appliedPromotions: [], 
+          totalDiscount: 0,
+          errors: [error.message] 
+        },
+        finalTotal: cartSummary.estimatedTotal,
+      };
+    }
   }
 }

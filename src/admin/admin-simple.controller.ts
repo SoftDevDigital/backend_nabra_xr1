@@ -17,6 +17,8 @@ import { Product } from '../products/schemas/product.schema';
 import { Order } from '../orders/schemas/order.schema';
 import { Payment } from '../payments/schemas/payment.schema';
 import { Review } from '../reviews/schemas/review.schema';
+import { Promotion } from '../promotions/schemas/promotion.schema';
+import { Coupon } from '../promotions/schemas/coupon.schema';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('admin')
@@ -28,6 +30,8 @@ export class AdminSimpleController {
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(Review.name) private reviewModel: Model<Review>,
+    @InjectModel(Promotion.name) private promotionModel: Model<Promotion>,
+    @InjectModel(Coupon.name) private couponModel: Model<Coupon>,
   ) {}
 
   // ===== DASHBOARD PRINCIPAL =====
@@ -48,6 +52,8 @@ export class AdminSimpleController {
         pendingOrders,
         lowStockProducts,
         pendingReviews,
+        activePromotions,
+        activeCoupons,
       ] = await Promise.all([
         this.userModel.countDocuments({}),
         this.productModel.countDocuments({}),
@@ -57,6 +63,8 @@ export class AdminSimpleController {
         this.orderModel.countDocuments({ status: 'pending' }),
         this.productModel.countDocuments({ stock: { $lte: 10, $gt: 0 } }),
         this.reviewModel.countDocuments({ status: 'pending' }),
+        this.promotionModel.countDocuments({ status: 'active' }),
+        this.couponModel.countDocuments({ status: 'active' }),
       ]);
 
       return {
@@ -66,6 +74,8 @@ export class AdminSimpleController {
           orders: { total: totalOrders, today: todayOrders, pending: pendingOrders },
           revenue: { total: Math.round(totalRevenue * 100) / 100 },
           reviews: { pending: pendingReviews },
+          promotions: { active: activePromotions },
+          coupons: { active: activeCoupons },
         },
         alerts: this.generateSimpleAlerts(lowStockProducts, pendingOrders, pendingReviews),
       };
@@ -329,5 +339,117 @@ export class AdminSimpleController {
     }
 
     return alerts;
+  }
+
+  // ===== GESTIÓN DE PROMOCIONES =====
+
+  @Get('promotions')
+  async getPromotions(@Query() query: any) {
+    const limit = Math.min(parseInt(query.limit) || 20, 100);
+    const offset = parseInt(query.offset) || 0;
+
+    const filter: any = {};
+    if (query.status) filter.status = query.status;
+    if (query.type) filter.type = query.type;
+
+    const [promotions, total] = await Promise.all([
+      this.promotionModel.find(filter).limit(limit).skip(offset).sort({ createdAt: -1 }).exec(),
+      this.promotionModel.countDocuments(filter),
+    ]);
+
+    return { promotions, total, limit, offset };
+  }
+
+  @Get('promotions/:promotionId')
+  async getPromotionById(@Param('promotionId') promotionId: string) {
+    const promotion = await this.promotionModel.findById(promotionId);
+    if (!promotion) {
+      return { error: 'Promotion not found' };
+    }
+    return promotion;
+  }
+
+  @Put('promotions/:promotionId/status')
+  async changePromotionStatus(
+    @Param('promotionId') promotionId: string,
+    @Body() body: { status: string },
+  ) {
+    const validStatuses = ['draft', 'active', 'paused', 'expired', 'cancelled'];
+    
+    if (!validStatuses.includes(body.status)) {
+      return { error: 'Invalid status' };
+    }
+
+    const promotion = await this.promotionModel.findByIdAndUpdate(
+      promotionId,
+      { status: body.status },
+      { new: true }
+    );
+
+    return { success: true, promotion };
+  }
+
+  @Get('coupons')
+  async getCoupons(@Query() query: any) {
+    const limit = Math.min(parseInt(query.limit) || 20, 100);
+    const offset = parseInt(query.offset) || 0;
+
+    const filter: any = {};
+    if (query.status) filter.status = query.status;
+    if (query.promotionId) filter.promotionId = query.promotionId;
+
+    const [coupons, total] = await Promise.all([
+      this.couponModel
+        .find(filter)
+        .populate('promotionId', 'name type')
+        .limit(limit)
+        .skip(offset)
+        .sort({ createdAt: -1 })
+        .exec(),
+      this.couponModel.countDocuments(filter),
+    ]);
+
+    return { coupons, total, limit, offset };
+  }
+
+  @Get('promotions/stats/summary')
+  async getPromotionStatsSummary() {
+    try {
+      const [
+        totalPromotions,
+        activePromotions,
+        totalCoupons,
+        activeCoupons,
+        usageStats,
+      ] = await Promise.all([
+        this.promotionModel.countDocuments({}),
+        this.promotionModel.countDocuments({ status: 'active' }),
+        this.couponModel.countDocuments({}),
+        this.couponModel.countDocuments({ status: 'active' }),
+        this.getPromotionUsageStats(),
+      ]);
+
+      return {
+        promotions: { total: totalPromotions, active: activePromotions },
+        coupons: { total: totalCoupons, active: activeCoupons },
+        usage: usageStats,
+      };
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
+  private async getPromotionUsageStats() {
+    const result = await this.promotionModel.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalUses: { $sum: '$totalUses' },
+          totalDiscountGiven: { $sum: '$totalDiscountGiven' },
+        },
+      },
+    ]);
+
+    return result[0] || { totalUses: 0, totalDiscountGiven: 0 };
   }
 }
