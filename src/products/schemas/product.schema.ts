@@ -29,6 +29,19 @@ export class Product extends Document {
 
   @Prop({ default: false })
   isFeatured: boolean;
+
+  @Prop({ type: Object, default: {} })
+  reviewStats?: {
+    totalReviews: number;
+    averageRating: number;
+    ratingDistribution: {
+      1: number;
+      2: number;
+      3: number;
+      4: number;
+      5: number;
+    };
+  };
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
