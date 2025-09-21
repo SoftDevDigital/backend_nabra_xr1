@@ -4,7 +4,7 @@ Este documento detalla todos los endpoints disponibles en la API del backend, in
 
 ## Base URL
 ```
-http://localhost:3000
+https://9dbdcf7272a6.ngrok-free.app
 ```
 
 ## Autenticación
@@ -923,4 +923,241 @@ curl -X POST http://localhost:3000/cart/add \
 
 ---
 
+## 👤 **ENDPOINTS DE PERFIL DE USUARIO** (`/profile`)
+
+### GET /profile
+**Descripción:** Obtener perfil completo del usuario (se crea automáticamente si no existe)
+- **Método:** `GET`
+- **URL:** `/profile`
+- **Autenticación:** Requerida
+- **Respuesta:** Objeto UserProfile completo
+
+### PUT /profile
+**Descripción:** Actualizar información del perfil
+- **Método:** `PUT`
+- **URL:** `/profile`
+- **Autenticación:** Requerida
+- **Body:** UpdateProfileDto (campos opcionales)
+
+### GET /profile/stats
+**Descripción:** Obtener estadísticas y completitud del perfil
+- **Método:** `GET`
+- **URL:** `/profile/stats`
+- **Autenticación:** Requerida
+
+### GET /profile/completion-guide
+**Descripción:** Obtener guía paso a paso para completar el perfil
+- **Método:** `GET`
+- **URL:** `/profile/completion-guide`
+- **Autenticación:** Requerida
+
+### POST /profile/verify/email
+**Descripción:** Verificar email del usuario
+- **Método:** `POST`
+- **URL:** `/profile/verify/email`
+- **Autenticación:** Requerida
+
+### POST /profile/verify/phone
+**Descripción:** Verificar teléfono del usuario
+- **Método:** `POST`
+- **URL:** `/profile/verify/phone`
+- **Autenticación:** Requerida
+
+### POST /profile/verify/identity
+**Descripción:** Verificar identidad del usuario
+- **Método:** `POST`
+- **URL:** `/profile/verify/identity`
+- **Autenticación:** Requerida
+
+---
+
+## 🏠 **ENDPOINTS DE DIRECCIONES** (`/profile/addresses`)
+
+### GET /profile/addresses
+**Descripción:** Obtener todas las direcciones del usuario
+- **Método:** `GET`
+- **URL:** `/profile/addresses`
+- **Query Params:** `type` (opcional) - Filtrar por tipo de dirección
+- **Autenticación:** Requerida
+
+### GET /profile/addresses/:addressId
+**Descripción:** Obtener dirección específica
+- **Método:** `GET`
+- **URL:** `/profile/addresses/:addressId`
+- **Autenticación:** Requerida
+
+### POST /profile/addresses
+**Descripción:** Crear nueva dirección
+- **Método:** `POST`
+- **URL:** `/profile/addresses`
+- **Autenticación:** Requerida
+- **Body:** CreateAddressDto
+
+### PUT /profile/addresses/:addressId
+**Descripción:** Actualizar dirección existente
+- **Método:** `PUT`
+- **URL:** `/profile/addresses/:addressId`
+- **Autenticación:** Requerida
+- **Body:** UpdateAddressDto
+
+### DELETE /profile/addresses/:addressId
+**Descripción:** Eliminar dirección (soft delete)
+- **Método:** `DELETE`
+- **URL:** `/profile/addresses/:addressId`
+- **Autenticación:** Requerida
+
+### POST /profile/addresses/:addressId/set-default
+**Descripción:** Establecer dirección como predeterminada
+- **Método:** `POST`
+- **URL:** `/profile/addresses/:addressId/set-default`
+- **Autenticación:** Requerida
+
+---
+
+## 🚚 **ENDPOINTS DRENVÍO** (`/profile`)
+
+### GET /profile/shipping-info
+**Descripción:** Obtener información completa para envíos (DrEnvío)
+- **Método:** `GET`
+- **URL:** `/profile/shipping-info`
+- **Autenticación:** Requerida
+
+### GET /profile/addresses/:addressId/drenvio-validation
+**Descripción:** Validar dirección con DrEnvío
+- **Método:** `GET`
+- **URL:** `/profile/addresses/:addressId/drenvio-validation`
+- **Autenticación:** Requerida
+
+---
+
+## 🛍️ **ENDPOINTS MEJORADOS DE CARRITO**
+
+### GET /cart/validate
+**Descripción:** Validar carrito antes del checkout
+- **Método:** `GET`
+- **URL:** `/cart/validate`
+- **Autenticación:** Requerida
+
+### GET /cart/summary
+**Descripción:** Resumen completo del carrito con impuestos
+- **Método:** `GET`
+- **URL:** `/cart/summary`
+- **Autenticación:** Requerida
+
+### DELETE /cart/clear
+**Descripción:** Limpiar todo el carrito
+- **Método:** `DELETE`
+- **URL:** `/cart/clear`
+- **Autenticación:** Requerida
+
+---
+
+## 💳 **ENDPOINTS MEJORADOS DE PAGOS**
+
+### POST /payments/partial-checkout
+**Descripción:** Crear pago parcial desde carrito
+- **Método:** `POST`
+- **URL:** `/payments/partial-checkout`
+- **Autenticación:** Requerida
+- **Body:** PartialCheckoutDto
+
+### GET /payments/paypal/success
+**Descripción:** Callback exitoso de PayPal (público)
+- **Método:** `GET`
+- **URL:** `/payments/paypal/success`
+- **Query Params:** `token`, `PayerID`
+- **Autenticación:** No requerida (`@Public()`)
+
+### GET /payments/paypal/cancel
+**Descripción:** Callback de cancelación de PayPal (público)
+- **Método:** `GET`
+- **URL:** `/payments/paypal/cancel`
+- **Query Params:** `token`
+- **Autenticación:** No requerida (`@Public()`)
+
+---
+
+## 📦 **ENDPOINTS MEJORADOS DE ÓRDENES**
+
+### GET /orders/my-orders
+**Descripción:** Obtener historial de compras del usuario
+- **Método:** `GET`
+- **URL:** `/orders/my-orders`
+- **Query Params:** `limit`, `offset`
+- **Autenticación:** Requerida
+
+### GET /orders/my-orders/summary
+**Descripción:** Resumen de compras del usuario
+- **Método:** `GET`
+- **URL:** `/orders/my-orders/summary`
+- **Autenticación:** Requerida
+
+### GET /orders/my-orders/:id
+**Descripción:** Obtener orden específica del usuario
+- **Método:** `GET`
+- **URL:** `/orders/my-orders/:id`
+- **Autenticación:** Requerida
+
+---
+
+## 📋 **EJEMPLOS DE USO ACTUALIZADOS**
+
+### Flujo Completo de Perfil
+```bash
+# 1. Obtener/crear perfil
+curl -X GET "https://9dbdcf7272a6.ngrok-free.app/profile" \
+  -H "Authorization: Bearer <token>"
+
+# 2. Completar información personal
+curl -X PUT "https://9dbdcf7272a6.ngrok-free.app/profile" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Juan",
+    "lastName": "Pérez",
+    "phoneNumbers": [{
+      "countryCode": "+54",
+      "number": "1123456789",
+      "type": "mobile",
+      "isPrimary": true
+    }]
+  }'
+
+# 3. Crear dirección
+curl -X POST "https://9dbdcf7272a6.ngrok-free.app/profile/addresses" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "home",
+    "alias": "Casa",
+    "street": "Av. Corrientes 1234",
+    "city": "Buenos Aires",
+    "state": "CABA",
+    "postalCode": "1043",
+    "country": "Argentina"
+  }'
+```
+
+### Flujo de Compra Mejorado
+```bash
+# 1. Validar carrito
+curl -X GET "https://9dbdcf7272a6.ngrok-free.app/cart/validate" \
+  -H "Authorization: Bearer <token>"
+
+# 2. Compra parcial
+curl -X POST "https://9dbdcf7272a6.ngrok-free.app/payments/partial-checkout" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [{"itemId": "CART_ITEM_ID", "quantity": 1}]
+  }'
+
+# 3. Ver compras
+curl -X GET "https://9dbdcf7272a6.ngrok-free.app/orders/my-orders" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 *Documentación generada automáticamente basada en el código fuente del backend Nabra XR1*
+*Última actualización: Sistema completo de perfil, direcciones y mejoras en carrito/pagos*
