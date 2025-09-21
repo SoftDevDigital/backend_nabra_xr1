@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -107,5 +108,112 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
     return product;
+  }
+
+  // ===== GESTIÓN DE STOCK =====
+  
+  async checkStockAvailability(productId: string, requiredQuantity: number): Promise<{ available: boolean; currentStock: number; message?: string }> {
+    const product = await this.productModel.findById(productId);
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found`);
+    }
+
+    if (product.isPreorder) {
+      return {
+        available: true,
+        currentStock: product.stock,
+        message: 'Preorder item - stock validation bypassed'
+      };
+    }
+
+    const available = product.stock >= requiredQuantity;
+    return {
+      available,
+      currentStock: product.stock,
+      message: available ? undefined : `Insufficient stock. Available: ${product.stock}, Required: ${requiredQuantity}`
+    };
+  }
+
+  async reserveStock(productId: string, quantity: number): Promise<void> {
+    const product = await this.productModel.findById(productId);
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found`);
+    }
+
+    if (!product.isPreorder && product.stock < quantity) {
+      throw new BadRequestException(`Insufficient stock for product ${product.name}. Available: ${product.stock}, Required: ${quantity}`);
+    }
+
+    if (!product.isPreorder) {
+      product.stock -= quantity;
+      await product.save();
+    }
+  }
+
+  async releaseStock(productId: string, quantity: number): Promise<void> {
+    const product = await this.productModel.findById(productId);
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found`);
+    }
+
+    if (!product.isPreorder) {
+      product.stock += quantity;
+      await product.save();
+    }
+  }
+
+  async bulkReserveStock(items: { productId: string; quantity: number }[]): Promise<{ success: boolean; errors: string[] }> {
+    const errors: string[] = [];
+    const reservations: { productId: string; quantity: number }[] = [];
+
+    // Primero validamos todo el stock
+    for (const item of items) {
+      try {
+        const stockCheck = await this.checkStockAvailability(item.productId, item.quantity);
+        if (!stockCheck.available) {
+          errors.push(`${stockCheck.message}`);
+        } else {
+          reservations.push(item);
+        }
+      } catch (error) {
+        errors.push(`Product ${item.productId}: ${error.message}`);
+      }
+    }
+
+    // Si hay errores, no reservamos nada
+    if (errors.length > 0) {
+      return { success: false, errors };
+    }
+
+    // Reservamos todo el stock si no hay errores
+    try {
+      for (const reservation of reservations) {
+        await this.reserveStock(reservation.productId, reservation.quantity);
+      }
+      return { success: true, errors: [] };
+    } catch (error) {
+      // Si algo falla, liberamos lo que ya se reservó
+      for (const reservation of reservations) {
+        try {
+          await this.releaseStock(reservation.productId, reservation.quantity);
+        } catch (releaseError) {
+          console.error('Error releasing stock:', releaseError);
+        }
+      }
+      return { success: false, errors: [`Stock reservation failed: ${error.message}`] };
+    }
+  }
+
+  async getStockStatus(productId: string): Promise<{ stock: number; isPreorder: boolean; isAvailable: boolean }> {
+    const product = await this.productModel.findById(productId);
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found`);
+    }
+
+    return {
+      stock: product.stock,
+      isPreorder: product.isPreorder,
+      isAvailable: product.isPreorder || product.stock > 0
+    };
   }
 }

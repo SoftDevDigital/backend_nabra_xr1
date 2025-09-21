@@ -6,6 +6,7 @@ import {
   Param,
   Body,
   Request,
+  Query,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CheckoutPartialDto } from './dtos/checkout-partial';
@@ -26,6 +27,28 @@ export class OrdersController {
       req.user.userId,
       checkoutPartialDto,
     );
+  }
+
+  @Get('my-orders')
+  async getUserOrders(
+    @Request() req,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    const limitNum = limit ? parseInt(limit.toString(), 10) : 10;
+    const offsetNum = offset ? parseInt(offset.toString(), 10) : 0;
+    
+    return this.ordersService.getUserOrders(req.user.userId, limitNum, offsetNum);
+  }
+
+  @Get('my-orders/summary')
+  async getUserOrderSummary(@Request() req) {
+    return this.ordersService.getOrderSummary(req.user.userId);
+  }
+
+  @Get('my-orders/:id')
+  async getUserOrderById(@Param('id') id: string, @Request() req) {
+    return this.ordersService.getUserOrderById(req.user.userId, id);
   }
 
   @Get(':id')

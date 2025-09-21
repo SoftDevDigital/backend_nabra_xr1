@@ -67,20 +67,21 @@ export class CartController {
 
   @Get('total')
   async getCartTotal(@Request() req) {
-    const cart = await this.cartService.getCart(req.user.userId);
-    let total = 0;
-    
-    if (cart.items && cart.items.length > 0) {
-      total = cart.items.reduce((sum, item) => {
-        const product = item.product as any;
-        return sum + (product.price * item.quantity);
-      }, 0);
-    }
+    return this.cartService.getCartSummary(req.user.userId);
+  }
 
-    return {
-      total: parseFloat(total.toFixed(2)),
-      currency: 'USD',
-      itemCount: cart.items ? cart.items.length : 0,
-    };
+  @Get('validate')
+  async validateCart(@Request() req) {
+    return this.cartService.validateCartForCheckout(req.user.userId);
+  }
+
+  @Delete('clear')
+  async clearCart(@Request() req) {
+    return this.cartService.clearCart(req.user.userId);
+  }
+
+  @Get('summary')
+  async getCartSummary(@Request() req) {
+    return this.cartService.getCartSummary(req.user.userId);
   }
 }

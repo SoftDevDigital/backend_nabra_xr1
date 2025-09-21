@@ -13,20 +13,27 @@ export class Order extends Document {
         quantity: Number,
         size: String,
         price: Number,
+        productName: String, // Nombre del producto por si no se encuentra la referencia
       },
     ],
     required: true,
   })
-  items: { product: Product; quantity: number; size: string; price: number }[];
+  items: { product: Product; quantity: number; size: string; price: number; productName?: string }[];
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: User;
 
-  @Prop({ type: Types.ObjectId, ref: 'Cart', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'Cart', required: false })
   cartId: Cart;
 
   @Prop({ required: true })
   total: number;
+
+  @Prop({ default: 'USD' })
+  currency: string;
+
+  @Prop({ type: String, required: false })
+  paymentId: string; // ID del pago asociado
 
   @Prop({
     required: true,

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -16,6 +17,8 @@ import { Cart } from '../cart/schemas/cart.schema';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectModel(Order.name) private orderModel: Model<Order>,
     private cartService: CartService,
@@ -132,6 +135,137 @@ export class OrdersService {
       throw new NotFoundException(`No se encontró un pedido con ID ${id}`);
     }
     return order;
+  }
+
+  async createOrderFromPayment(paymentData: {
+    userId: string;
+    paymentId: string;
+    items: Array<{
+      name: string;
+      quantity: number;
+      price: number;
+      productId?: string;
+    }>;
+    totalAmount: number;
+    currency: string;
+  }) {
+    try {
+      const orderItems: Array<{
+        product: Types.ObjectId | null;
+        quantity: number;
+        price: number;
+        size?: string;
+        productName?: string;
+      }> = [];
+      
+      for (const item of paymentData.items) {
+        // Si tenemos productId, usarlo; si no, intentar encontrar el producto por nombre
+        let productId = item.productId;
+        
+        if (!productId && item.name) {
+          // Buscar producto por nombre (esto es un fallback)
+          const products = await this.productsService.findAll({ limit: 1 });
+          const foundProduct = products.find(p => p.name === item.name);
+          productId = foundProduct?._id?.toString();
+        }
+
+        orderItems.push({
+          product: productId ? new Types.ObjectId(productId) : null,
+          quantity: item.quantity,
+          price: item.price,
+          size: undefined, // No tenemos info de talla desde el pago
+          productName: item.name, // Guardamos el nombre por si no encontramos el producto
+        });
+      }
+
+      const order = new this.orderModel({
+        items: orderItems,
+        userId: new Types.ObjectId(paymentData.userId),
+        total: paymentData.totalAmount,
+        currency: paymentData.currency,
+        status: 'paid', // Ya está pagado
+        paymentId: paymentData.paymentId,
+        shippingAddress: {
+          street: 'Pending',
+          city: 'Pending', 
+          zip: 'Pending',
+          country: 'Pending'
+        }, // Dirección pendiente
+        createdAt: new Date(),
+      });
+
+      await order.save();
+      this.logger.log(`Order created from payment: ${order._id} for user ${paymentData.userId}`);
+      
+      return order;
+    } catch (error) {
+      this.logger.error('Error creating order from payment:', error);
+      throw new InternalServerErrorException(`Failed to create order: ${error.message}`);
+    }
+  }
+
+  async getUserOrders(userId: string, limit: number = 10, offset: number = 0) {
+    try {
+      const orders = await this.orderModel
+        .find({ userId })
+        .populate('items.product')
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(offset)
+        .exec();
+
+      return orders;
+    } catch (error) {
+      this.logger.error('Error fetching user orders:', error);
+      throw new InternalServerErrorException('Failed to fetch orders');
+    }
+  }
+
+  async getUserOrderById(userId: string, orderId: string) {
+    try {
+      const order = await this.orderModel
+        .findOne({ _id: orderId, userId })
+        .populate('items.product')
+        .exec();
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      return order;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error('Error fetching user order:', error);
+      throw new InternalServerErrorException('Failed to fetch order');
+    }
+  }
+
+  async getOrderSummary(userId: string) {
+    try {
+      const totalOrders = await this.orderModel.countDocuments({ userId });
+      const paidOrders = await this.orderModel.countDocuments({ userId, status: 'paid' });
+      const pendingOrders = await this.orderModel.countDocuments({ userId, status: 'pending' });
+      
+      const totalSpentResult = await this.orderModel.aggregate([
+        { $match: { userId: new Types.ObjectId(userId), status: 'paid' } },
+        { $group: { _id: null, total: { $sum: '$total' } } }
+      ]);
+
+      const totalSpent = totalSpentResult[0]?.total || 0;
+
+      return {
+        totalOrders,
+        paidOrders,
+        pendingOrders,
+        totalSpent: parseFloat(totalSpent.toFixed(2)),
+        currency: 'USD'
+      };
+    } catch (error) {
+      this.logger.error('Error getting order summary:', error);
+      throw new InternalServerErrorException('Failed to get order summary');
+    }
   }
 
   private async getProductPrice(productId: Types.ObjectId) {

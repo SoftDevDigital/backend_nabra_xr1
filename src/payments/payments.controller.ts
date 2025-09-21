@@ -14,6 +14,7 @@ import {
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dtos/create-payment.dto';
 import { PaymentCaptureDto } from './dtos/payment-response.dto';
+import { PartialCheckoutDto } from './dtos/partial-checkout.dto';
 import { Public } from '../common/decorators/public.decorator';
 
 @Controller('payments')
@@ -31,6 +32,18 @@ export class PaymentsController {
       req.user.userId,
       returnUrl,
       cancelUrl,
+    );
+  }
+
+  @Post('partial-checkout')
+  @HttpCode(HttpStatus.CREATED)
+  async createPartialPaymentFromCart(
+    @Request() req,
+    @Body() partialCheckoutDto: PartialCheckoutDto,
+  ) {
+    return this.paymentsService.createPartialPaymentFromCart(
+      req.user.userId,
+      partialCheckoutDto,
     );
   }
 
