@@ -1,8 +1,8 @@
 export const drenvioConfig = {
   // Configuración de API
   apiUrl: process.env.DRENVIO_API_URL || 'https://api.drenvio.com.ar/v1',
-  apiKey: process.env.DRENVIO_API_KEY || 'your_api_key_here',
-  secretKey: process.env.DRENVIO_SECRET_KEY || 'your_secret_key_here',
+  apiKey: process.env.DRENVIO_API_KEY || '',
+  secretKey: process.env.DRENVIO_SECRET_KEY || '',
   environment: process.env.DRENVIO_ENVIRONMENT || 'sandbox', // 'sandbox' o 'production'
   
   // Configuración de empresa

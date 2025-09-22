@@ -10,10 +10,10 @@ export const googleAuthConfig = {
   scope: ['profile', 'email'],
   
   // Configuración de sesión
-  sessionSecret: process.env.SESSION_SECRET || 'your-session-secret-key',
+  sessionSecret: process.env.SESSION_SECRET || '',
   
   // Configuración de JWT para usuarios de Google
-  jwtSecret: process.env.JWT_SECRET || 'your-jwt-secret',
+  jwtSecret: process.env.JWT_SECRET || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   
   // Configuración de redirección después del login - HARDCODED
