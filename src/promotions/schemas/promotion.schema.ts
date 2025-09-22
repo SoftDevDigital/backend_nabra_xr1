@@ -7,11 +7,28 @@ export enum PromotionType {
   PERCENTAGE = 'percentage', // Descuento porcentual
   FIXED_AMOUNT = 'fixed_amount', // Descuento monto fijo
   FREE_SHIPPING = 'free_shipping', // Envío gratis
-  BUY_X_GET_Y = 'buy_x_get_y', // Compra X lleva Y
+  BUY_X_GET_Y = 'buy_x_get_y', // Compra X lleva Y (2x1)
   QUANTITY_DISCOUNT = 'quantity_discount', // Descuento por cantidad
   CATEGORY_DISCOUNT = 'category_discount', // Descuento por categoría
   MINIMUM_PURCHASE = 'minimum_purchase', // Descuento por compra mínima
   FLASH_SALE = 'flash_sale', // Oferta relámpago
+  
+  // NUEVOS TIPOS
+  PAY_X_GET_Y = 'pay_x_get_y', // Pagas X cantidad y te llevas Y cantidad
+  SPECIFIC_PRODUCT_DISCOUNT = 'specific_product_discount', // Descuento a producto específico
+  PROGRESSIVE_QUANTITY_DISCOUNT = 'progressive_quantity_discount', // Descuentos progresivos por cantidad
+  BUNDLE_OFFER = 'bundle_offer', // Ofertas de paquetes
+  CROSS_SELL_DISCOUNT = 'cross_sell_discount', // Descuento por comprar productos relacionados
+  TIME_BASED_DISCOUNT = 'time_based_discount', // Descuento basado en horarios
+  LOYALTY_DISCOUNT = 'loyalty_discount', // Descuento por fidelidad
+  BIRTHDAY_DISCOUNT = 'birthday_discount', // Descuento de cumpleaños
+  FIRST_PURCHASE_DISCOUNT = 'first_purchase_discount', // Descuento primera compra
+  ABANDONED_CART_DISCOUNT = 'abandoned_cart_discount', // Descuento carrito abandonado
+  STOCK_CLEARANCE = 'stock_clearance', // Liquidación de stock
+  SEASONAL_DISCOUNT = 'seasonal_discount', // Descuento estacional
+  VOLUME_DISCOUNT = 'volume_discount', // Descuento por volumen
+  COMBO_DISCOUNT = 'combo_discount', // Descuento por combos
+  GIFT_WITH_PURCHASE = 'gift_with_purchase', // Regalo con compra
 }
 
 export enum PromotionStatus {
@@ -87,6 +104,13 @@ export class PromotionRules {
   @Prop()
   getDiscountPercentage?: number; // Descuento en los items "get"
 
+  // Para PAY_X_GET_Y (pagar X cantidad y llevarse Y cantidad)
+  @Prop()
+  payQuantity?: number; // Cantidad que pagas
+
+  @Prop()
+  getTotalQuantity?: number; // Cantidad total que te llevas
+
   // Para descuentos por cantidad
   @Prop({ type: [{ 
     quantity: Number, 
@@ -99,12 +123,97 @@ export class PromotionRules {
     discountType: 'percentage' | 'fixed';
   }>;
 
+  // Para descuentos progresivos por cantidad (ej: 2do al 50%)
+  @Prop({ type: [{ 
+    position: Number, // Posición del item (1, 2, 3...)
+    discount: Number,
+    discountType: { type: String, enum: ['percentage', 'fixed'] }
+  }] })
+  progressiveTiers?: Array<{
+    position: number; // 1 = primer item, 2 = segundo item, etc.
+    discount: number;
+    discountType: 'percentage' | 'fixed';
+  }>;
+
+  // Para bundles/combos
+  @Prop({ type: [{ 
+    productId: String,
+    requiredQuantity: Number,
+    discount: Number,
+    discountType: { type: String, enum: ['percentage', 'fixed'] }
+  }] })
+  bundleItems?: Array<{
+    productId: string;
+    requiredQuantity: number;
+    discount: number;
+    discountType: 'percentage' | 'fixed';
+  }>;
+
+  // Para regalos con compra
+  @Prop({ type: [{ 
+    giftProductId: String,
+    giftQuantity: Number,
+    minimumPurchaseAmount: Number
+  }] })
+  giftItems?: Array<{
+    giftProductId: string;
+    giftQuantity: number;
+    minimumPurchaseAmount: number;
+  }>;
+
+  // Para descuentos basados en tiempo
+  @Prop({ type: [{ 
+    dayOfWeek: Number, // 0-6 (domingo a sábado)
+    startHour: Number, // 0-23
+    endHour: Number, // 0-23
+    discount: Number,
+    discountType: { type: String, enum: ['percentage', 'fixed'] }
+  }] })
+  timeSlots?: Array<{
+    dayOfWeek: number;
+    startHour: number;
+    endHour: number;
+    discount: number;
+    discountType: 'percentage' | 'fixed';
+  }>;
+
+  // Para descuentos por fidelidad
+  @Prop()
+  loyaltyLevel?: string; // 'bronze', 'silver', 'gold', 'platinum'
+
+  @Prop()
+  minimumPurchaseHistory?: number; // Compras mínimas previas
+
+  // Para descuentos de cumpleaños
+  @Prop()
+  birthdayDiscountDays?: number; // Días antes/después del cumpleaños
+
+  // Para liquidación de stock
+  @Prop()
+  stockThreshold?: number; // Stock mínimo para activar
+
+  @Prop()
+  urgencyLevel?: string; // 'low', 'medium', 'high'
+
+  // Para descuentos estacionales
+  @Prop()
+  season?: string; // 'spring', 'summer', 'autumn', 'winter'
+
+  @Prop()
+  holiday?: string; // 'christmas', 'easter', 'black_friday', etc.
+
   // Límites
   @Prop()
   maxDiscountAmount?: number; // Límite máximo de descuento
 
   @Prop()
   minDiscountAmount?: number; // Descuento mínimo para aplicar
+
+  @Prop()
+  maxUsesPerDay?: number; // Máximo usos por día
+
+  @Prop()
+  maxUsesPerUser?: number; // Máximo usos por usuario
 }
 
 @Schema({ _id: false })
@@ -179,6 +288,19 @@ export class Promotion extends Document {
 
   @Prop({ default: 1 })
   priority: number; // Para resolver conflictos entre promociones
+
+  // Sistema automático de aplicación a carrito
+  @Prop({ default: true })
+  autoApplyToCart: boolean; // Se aplica automáticamente a productos en carrito
+
+  @Prop({ default: false })
+  retroactiveApplication: boolean; // Se aplica a productos ya en carrito cuando se activa
+
+  @Prop({ default: false })
+  realTimeUpdate: boolean; // Actualiza descuentos en tiempo real en el carrito
+
+  @Prop({ default: false })
+  notifyCartUsers: boolean; // Notifica a usuarios con productos en carrito
 
   // Información adicional
   @Prop({ maxlength: 50 })

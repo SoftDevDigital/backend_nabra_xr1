@@ -9,6 +9,7 @@ import { Coupon, CouponSchema } from './schemas/coupon.schema';
 // Services
 import { PromotionsService } from './promotions.service';
 import { DiscountCalculatorService } from './discount-calculator.service';
+import { CartPromotionService } from './services/cart-promotion.service';
 
 // Controllers
 import { PromotionsController } from './promotions.controller';
@@ -16,6 +17,7 @@ import { PromotionsController } from './promotions.controller';
 // External modules
 import { ProductsModule } from '../products/products.module';
 import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -26,9 +28,10 @@ import { UsersModule } from '../users/users.module';
     ]),
     forwardRef(() => ProductsModule),
     forwardRef(() => UsersModule),
+    forwardRef(() => NotificationsModule),
   ],
   controllers: [PromotionsController],
-  providers: [PromotionsService, DiscountCalculatorService],
-  exports: [PromotionsService, DiscountCalculatorService],
+  providers: [PromotionsService, DiscountCalculatorService, CartPromotionService],
+  exports: [PromotionsService, DiscountCalculatorService, CartPromotionService],
 })
 export class PromotionsModule {}

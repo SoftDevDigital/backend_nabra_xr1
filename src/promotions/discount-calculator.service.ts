@@ -259,6 +259,91 @@ export class DiscountCalculatorService {
         ));
         break;
 
+      // NUEVOS TIPOS DE PROMOCIONES
+      case PromotionType.PAY_X_GET_Y:
+        ({ discountAmount, appliedToItems, description } = this.calculatePayXGetYDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.SPECIFIC_PRODUCT_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = this.calculateSpecificProductDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.PROGRESSIVE_QUANTITY_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = this.calculateProgressiveQuantityDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.BUNDLE_OFFER:
+        ({ discountAmount, appliedToItems, description } = this.calculateBundleOfferDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.TIME_BASED_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = this.calculateTimeBasedDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.LOYALTY_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = await this.calculateLoyaltyDiscount(
+          promotion, cartItems, userId
+        ));
+        break;
+
+      case PromotionType.BIRTHDAY_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = await this.calculateBirthdayDiscount(
+          promotion, cartItems, userId
+        ));
+        break;
+
+      case PromotionType.FIRST_PURCHASE_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = await this.calculateFirstPurchaseDiscount(
+          promotion, cartItems, userId
+        ));
+        break;
+
+      case PromotionType.ABANDONED_CART_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = await this.calculateAbandonedCartDiscount(
+          promotion, cartItems, userId
+        ));
+        break;
+
+      case PromotionType.STOCK_CLEARANCE:
+        ({ discountAmount, appliedToItems, description } = await this.calculateStockClearanceDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.SEASONAL_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = this.calculateSeasonalDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.VOLUME_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = this.calculateVolumeDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.COMBO_DISCOUNT:
+        ({ discountAmount, appliedToItems, description } = this.calculateComboDiscount(
+          promotion, cartItems
+        ));
+        break;
+
+      case PromotionType.GIFT_WITH_PURCHASE:
+        ({ discountAmount, appliedToItems, description } = await this.calculateGiftWithPurchaseDiscount(
+          promotion, cartItems, totalAmount
+        ));
+        break;
+
       default:
         description = 'Tipo de promoción no soportado';
     }
@@ -714,5 +799,596 @@ export class DiscountCalculatorService {
       .populate('promotionId', 'name description type')
       .sort({ createdAt: -1 })
       .exec();
+  }
+
+  // ===== NUEVOS MÉTODOS DE CÁLCULO =====
+
+  private calculatePayXGetYDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): DiscountCalculation {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // Ejemplo: Pagas 2 y te llevas 3 (3x2)
+    if (rules.payQuantity && rules.getTotalQuantity) {
+      for (const item of cartItems) {
+        if (item.quantity >= rules.getTotalQuantity) {
+          const payQuantity = Math.floor(item.quantity / rules.getTotalQuantity) * rules.payQuantity;
+          const freeQuantity = item.quantity - payQuantity;
+          
+          if (freeQuantity > 0) {
+            const itemDiscount = freeQuantity * item.price;
+            discountAmount += itemDiscount;
+            appliedToItems.push(item.productId);
+          }
+        }
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Paga ${rules.payQuantity} y lleva ${rules.getTotalQuantity}`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private calculateSpecificProductDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): DiscountCalculation {
+    const rules = promotion.rules;
+    const conditions = promotion.conditions;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // Aplicar descuento solo a productos específicos
+    for (const item of cartItems) {
+      if (conditions.specificProducts?.map(p => p.toString()).includes(item.productId)) {
+        let itemDiscount = 0;
+        
+        if (rules.discountPercentage) {
+          itemDiscount = (item.price * item.quantity * rules.discountPercentage) / 100;
+        } else if (rules.discountAmount) {
+          itemDiscount = Math.min(rules.discountAmount, item.price * item.quantity);
+        }
+
+        discountAmount += itemDiscount;
+        appliedToItems.push(item.productId);
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento especial en productos seleccionados`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private calculateProgressiveQuantityDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): DiscountCalculation {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    if (rules.progressiveTiers) {
+      for (const item of cartItems) {
+        let itemDiscount = 0;
+        
+        for (let i = 0; i < item.quantity && i < rules.progressiveTiers.length; i++) {
+          const tier = rules.progressiveTiers[i];
+          
+          if (tier.discountType === 'percentage') {
+            itemDiscount += item.price * (tier.discount / 100);
+          } else {
+            itemDiscount += tier.discount;
+          }
+        }
+
+        if (itemDiscount > 0) {
+          discountAmount += itemDiscount;
+          appliedToItems.push(item.productId);
+        }
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento progresivo por cantidad (ej: 2do al 50%)`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private calculateBundleOfferDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): DiscountCalculation {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    if (rules.bundleItems) {
+      // Verificar si el carrito contiene todos los productos del bundle
+      const bundleProducts = rules.bundleItems.map(bundle => bundle.productId);
+      const cartProductIds = cartItems.map(item => item.productId);
+      
+      const hasAllBundleProducts = bundleProducts.every(productId => 
+        cartProductIds.includes(productId)
+      );
+
+      if (hasAllBundleProducts) {
+        // Calcular descuento para cada producto del bundle
+        for (const bundleItem of rules.bundleItems) {
+          const cartItem = cartItems.find(item => item.productId === bundleItem.productId);
+          
+          if (cartItem && cartItem.quantity >= bundleItem.requiredQuantity) {
+            let itemDiscount = 0;
+            
+            if (bundleItem.discountType === 'percentage') {
+              itemDiscount = (cartItem.price * cartItem.quantity * bundleItem.discount) / 100;
+            } else {
+              itemDiscount = bundleItem.discount;
+            }
+
+            discountAmount += itemDiscount;
+            appliedToItems.push(cartItem.productId);
+          }
+        }
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento por paquete completo`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private calculateTimeBasedDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): DiscountCalculation {
+    const rules = promotion.rules;
+    const now = new Date();
+    const currentDay = now.getDay(); // 0 = domingo, 6 = sábado
+    const currentHour = now.getHours();
+
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    if (rules.timeSlots) {
+      // Verificar si el horario actual coincide con algún slot de descuento
+      const applicableSlot = rules.timeSlots.find(slot => 
+        slot.dayOfWeek === currentDay &&
+        currentHour >= slot.startHour &&
+        currentHour <= slot.endHour
+      );
+
+      if (applicableSlot) {
+        for (const item of cartItems) {
+          let itemDiscount = 0;
+          
+          if (applicableSlot.discountType === 'percentage') {
+            itemDiscount = (item.price * item.quantity * applicableSlot.discount) / 100;
+          } else {
+            itemDiscount = applicableSlot.discount;
+          }
+
+          discountAmount += itemDiscount;
+          appliedToItems.push(item.productId);
+        }
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento por horario especial`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private async calculateLoyaltyDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+    userId: string,
+  ): Promise<DiscountCalculation> {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // En producción, verificar el nivel de fidelidad del usuario
+    const userLoyaltyLevel = await this.getUserLoyaltyLevel(userId);
+    
+    if (userLoyaltyLevel === rules.loyaltyLevel) {
+      for (const item of cartItems) {
+        let itemDiscount = 0;
+        
+        if (rules.discountPercentage) {
+          itemDiscount = (item.price * item.quantity * rules.discountPercentage) / 100;
+        } else if (rules.discountAmount) {
+          itemDiscount = Math.min(rules.discountAmount, item.price * item.quantity);
+        }
+
+        discountAmount += itemDiscount;
+        appliedToItems.push(item.productId);
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento por fidelidad ${rules.loyaltyLevel}`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private async calculateBirthdayDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+    userId: string,
+  ): Promise<DiscountCalculation> {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // En producción, verificar si es el cumpleaños del usuario
+    const isBirthday = await this.isUserBirthday(userId, rules.birthdayDiscountDays || 7);
+    
+    if (isBirthday) {
+      for (const item of cartItems) {
+        let itemDiscount = 0;
+        
+        if (rules.discountPercentage) {
+          itemDiscount = (item.price * item.quantity * rules.discountPercentage) / 100;
+        } else if (rules.discountAmount) {
+          itemDiscount = Math.min(rules.discountAmount, item.price * item.quantity);
+        }
+
+        discountAmount += itemDiscount;
+        appliedToItems.push(item.productId);
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `¡Descuento de cumpleaños!`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private async calculateFirstPurchaseDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+    userId: string,
+  ): Promise<DiscountCalculation> {
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // En producción, verificar si es la primera compra del usuario
+    const isFirstPurchase = await this.isUserFirstPurchase(userId);
+    
+    if (isFirstPurchase) {
+      for (const item of cartItems) {
+        let itemDiscount = 0;
+        
+        if (promotion.rules.discountPercentage) {
+          itemDiscount = (item.price * item.quantity * promotion.rules.discountPercentage) / 100;
+        } else if (promotion.rules.discountAmount) {
+          itemDiscount = Math.min(promotion.rules.discountAmount, item.price * item.quantity);
+        }
+
+        discountAmount += itemDiscount;
+        appliedToItems.push(item.productId);
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento por primera compra`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private async calculateAbandonedCartDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+    userId: string,
+  ): Promise<DiscountCalculation> {
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // En producción, verificar si el carrito fue abandonado
+    const isAbandonedCart = await this.isAbandonedCart(userId);
+    
+    if (isAbandonedCart) {
+      for (const item of cartItems) {
+        let itemDiscount = 0;
+        
+        if (promotion.rules.discountPercentage) {
+          itemDiscount = (item.price * item.quantity * promotion.rules.discountPercentage) / 100;
+        } else if (promotion.rules.discountAmount) {
+          itemDiscount = Math.min(promotion.rules.discountAmount, item.price * item.quantity);
+        }
+
+        discountAmount += itemDiscount;
+        appliedToItems.push(item.productId);
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento por carrito abandonado`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private async calculateStockClearanceDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): Promise<DiscountCalculation> {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // Aplicar descuento basado en el nivel de urgencia de liquidación
+    const urgencyMultiplier = this.getUrgencyMultiplier(rules.urgencyLevel || 'low');
+
+    for (const item of cartItems) {
+      // En producción, verificar el stock del producto
+      const productStock = await this.getProductStock(item.productId);
+      
+      if (rules.stockThreshold && productStock <= rules.stockThreshold) {
+        let itemDiscount = 0;
+        
+        if (rules.discountPercentage) {
+          itemDiscount = (item.price * item.quantity * rules.discountPercentage * urgencyMultiplier) / 100;
+        } else if (rules.discountAmount) {
+          itemDiscount = rules.discountAmount * urgencyMultiplier;
+        }
+
+        discountAmount += itemDiscount;
+        appliedToItems.push(item.productId);
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Liquidación de stock`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private calculateSeasonalDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): DiscountCalculation {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // En producción, verificar si es la temporada correcta
+    const isCorrectSeason = rules.season ? this.isCurrentSeason(rules.season) : false;
+    const isCorrectHoliday = rules.holiday ? this.isCurrentHoliday(rules.holiday) : false;
+    
+    if (isCorrectSeason || isCorrectHoliday) {
+      for (const item of cartItems) {
+        let itemDiscount = 0;
+        
+        if (rules.discountPercentage) {
+          itemDiscount = (item.price * item.quantity * rules.discountPercentage) / 100;
+        } else if (rules.discountAmount) {
+          itemDiscount = Math.min(rules.discountAmount, item.price * item.quantity);
+        }
+
+        discountAmount += itemDiscount;
+        appliedToItems.push(item.productId);
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento estacional`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private calculateVolumeDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): DiscountCalculation {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // Calcular volumen total
+    const totalVolume = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+
+    if (rules.quantityTiers) {
+      for (const tier of rules.quantityTiers) {
+        if (totalVolume >= tier.quantity) {
+          // Aplicar descuento a todos los items
+          for (const item of cartItems) {
+            let itemDiscount = 0;
+            
+            if (tier.discountType === 'percentage') {
+              itemDiscount = (item.price * item.quantity * tier.discount) / 100;
+            } else {
+              itemDiscount = tier.discount;
+            }
+
+            discountAmount += itemDiscount;
+            appliedToItems.push(item.productId);
+          }
+          break; // Usar el tier más alto aplicable
+        }
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento por volumen (${totalVolume} unidades)`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private calculateComboDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+  ): DiscountCalculation {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    // Similar a bundle pero más flexible
+    if (rules.bundleItems) {
+      const applicableItems = cartItems.filter(item => 
+        rules.bundleItems?.some(bundle => bundle.productId === item.productId)
+      );
+
+      if (applicableItems.length >= 2) { // Mínimo 2 productos para combo
+        for (const item of applicableItems) {
+          let itemDiscount = 0;
+          
+          if (rules.discountPercentage) {
+            itemDiscount = (item.price * item.quantity * rules.discountPercentage) / 100;
+          } else if (rules.discountAmount) {
+            itemDiscount = Math.min(rules.discountAmount, item.price * item.quantity);
+          }
+
+          discountAmount += itemDiscount;
+          appliedToItems.push(item.productId);
+        }
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Descuento por combo`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  private async calculateGiftWithPurchaseDiscount(
+    promotion: Promotion,
+    cartItems: CartItemForDiscountDto[],
+    totalAmount: number,
+  ): Promise<DiscountCalculation> {
+    const rules = promotion.rules;
+    let discountAmount = 0;
+    const appliedToItems: string[] = [];
+
+    if (rules.giftItems) {
+      for (const gift of rules.giftItems) {
+        if (totalAmount >= gift.minimumPurchaseAmount) {
+          // El descuento es el valor del regalo
+          const giftValue = await this.getProductPrice(gift.giftProductId);
+          discountAmount += giftValue * gift.giftQuantity;
+          
+          // Marcar todos los items como aplicables (el regalo se aplica a toda la compra)
+          cartItems.forEach(item => appliedToItems.push(item.productId));
+        }
+      }
+    }
+
+    return {
+      discountAmount,
+      appliedToItems,
+      description: `Regalo con compra`,
+      promotionId: (promotion._id as any).toString(),
+      promotionName: promotion.name,
+      type: promotion.type,
+    };
+  }
+
+  // ===== MÉTODOS AUXILIARES =====
+
+  private async getUserLoyaltyLevel(userId: string): Promise<string> {
+    // En producción, consultar el nivel de fidelidad del usuario
+    return 'bronze'; // Placeholder
+  }
+
+  private async isUserBirthday(userId: string, daysRange: number): Promise<boolean> {
+    // En producción, verificar si es el cumpleaños del usuario
+    return false; // Placeholder
+  }
+
+  private async isUserFirstPurchase(userId: string): Promise<boolean> {
+    // En producción, verificar si es la primera compra
+    return false; // Placeholder
+  }
+
+  private async isAbandonedCart(userId: string): Promise<boolean> {
+    // En producción, verificar si el carrito fue abandonado
+    return false; // Placeholder
+  }
+
+  private async getProductStock(productId: string): Promise<number> {
+    // En producción, consultar el stock del producto
+    return 100; // Placeholder
+  }
+
+  private getUrgencyMultiplier(urgencyLevel: string): number {
+    switch (urgencyLevel) {
+      case 'low': return 1;
+      case 'medium': return 1.5;
+      case 'high': return 2;
+      default: return 1;
+    }
+  }
+
+  private isCurrentSeason(season: string): boolean {
+    // En producción, verificar la temporada actual
+    return true; // Placeholder
+  }
+
+  private isCurrentHoliday(holiday: string): boolean {
+    // En producción, verificar si es el día festivo
+    return false; // Placeholder
+  }
+
+  private async getProductPrice(productId: string): Promise<number> {
+    // En producción, consultar el precio del producto
+    return 100; // Placeholder
   }
 }
