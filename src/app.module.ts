@@ -13,6 +13,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { AdminSimpleModule } from './admin/admin-simple.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { AdminSimpleModule } from './admin/admin-simple.module';
     ShippingModule,
     ReviewsModule,
     PromotionsModule,
+    NotificationsModule,
     AdminSimpleModule,
   ],
 })

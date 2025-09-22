@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bienvenido a {{storeName}}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .content {
+            padding: 20px;
+        }
+        .button {
+            display: inline-block;
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>¡Bienvenido a {{storeName}}!</h1>
+    </div>
+    
+    <div class="content">
+        <h2>Hola {{userName}},</h2>
+        
+        <p>¡Nos complace darte la bienvenida a {{storeName}}! Estamos emocionados de tenerte como parte de nuestra comunidad.</p>
+        
+        <p>Con tu cuenta, podrás:</p>
+        <ul>
+            <li>Hacer compras de forma rápida y segura</li>
+            <li>Realizar seguimiento de tus pedidos</li>
+            <li>Guardar productos en tu lista de deseos</li>
+            <li>Recibir ofertas exclusivas</li>
+            <li>Acceder a contenido premium</li>
+        </ul>
+        
+        <p>Para comenzar, te regalamos un descuento especial del {{discountPercent}}% en tu primera compra.</p>
+        
+        <a href="{{storeUrl}}" class="button">Comenzar a Comprar</a>
+        
+        <p>Si tienes alguna pregunta, no dudes en contactarnos. ¡Estamos aquí para ayudarte!</p>
+        
+        <p>¡Que disfrutes tu experiencia de compra!</p>
+        
+        <p>El equipo de {{storeName}}</p>
+    </div>
+    
+    <div class="footer">
+        <p>Este email fue enviado a {{userEmail}}. Si no deseas recibir más emails, puedes <a href="{{unsubscribeUrl}}">cancelar tu suscripción</a>.</p>
+        <p>{{storeName}} - {{storeAddress}}</p>
+    </div>
+</body>
+</html>
