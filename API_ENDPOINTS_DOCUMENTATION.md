@@ -1,15 +1,16 @@
-# Documentación de Endpoints - Backend Nabra XR1
+# 📚 Documentación Completa de Endpoints - Backend Nabra XR1
 
-Este documento detalla todos los endpoints disponibles en la API del backend, incluyendo métodos HTTP, URLs, parámetros, respuestas y posibles errores.
+Este documento detalla **TODOS** los endpoints disponibles en la API del backend, incluyendo los nuevos sistemas implementados: **Notificaciones**, **Promociones Expandidas**, **DrEnvío**, y más.
 
-## Base URL
+## 🌐 Base URL
 ```
 https://9dbdcf7272a6.ngrok-free.app
 ```
 
-## Autenticación
+## 🔐 Autenticación
 - **JWT Bearer Token** requerido para la mayoría de endpoints (excepto los marcados como `@Public()`)
 - Header: `Authorization: Bearer <token>`
+- Roles: `user`, `admin`
 
 ---
 
@@ -20,12 +21,7 @@ https://9dbdcf7272a6.ngrok-free.app
 - **Método:** `GET`
 - **URL:** `/`
 - **Autenticación:** No requerida
-- **Parámetros:** Ninguno
-- **Respuesta:**
-  ```json
-  "Hello World!"
-  ```
-- **Errores:** Ninguno
+- **Respuesta:** `"Hello World!"`
 
 ---
 
@@ -51,81 +47,46 @@ https://9dbdcf7272a6.ngrok-free.app
 - **Respuesta:**
   ```json
   {
+    "access_token": "string",
     "user": {
       "_id": "string",
       "email": "string",
       "name": "string",
-      "role": "user",
-      "address": {
-        "street": "string",
-        "city": "string",
-        "zip": "string",
-        "country": "string"
-      },
-      "createdAt": "date",
-      "updatedAt": "date"
-    },
-    "token": "string (JWT)"
+      "role": "user"
+    }
   }
   ```
-- **Errores:**
-  - `400 Bad Request`: Email inválido, contraseña muy corta
-  - `409 Conflict`: Email ya existe
 
 ### POST /auth/login
-**Descripción:** Inicio de sesión de usuarios
+**Descripción:** Inicio de sesión
 - **Método:** `POST`
 - **URL:** `/auth/login`
 - **Autenticación:** No requerida (`@Public()`)
 - **Body:**
   ```json
   {
-    "email": "string (email válido)",
-    "password": "string (mínimo 6 caracteres)"
+    "email": "string",
+    "password": "string"
   }
   ```
 - **Respuesta:**
   ```json
   {
+    "access_token": "string",
     "user": {
       "_id": "string",
       "email": "string",
       "name": "string",
-      "role": "string",
-      "address": "object"
-    },
-    "token": "string (JWT)"
+      "role": "string"
+    }
   }
   ```
-- **Errores:**
-  - `400 Bad Request`: Credenciales inválidas
-  - `401 Unauthorized`: Usuario no encontrado o contraseña incorrecta
 
-### GET /auth/protected
-**Descripción:** Endpoint de prueba para rutas protegidas
-- **Método:** `GET`
-- **URL:** `/auth/protected`
-- **Autenticación:** Requerida (JWT)
-- **Parámetros:** Ninguno
-- **Respuesta:**
-  ```json
-  {
-    "message": "This is a protected route"
-  }
-  ```
-- **Errores:**
-  - `401 Unauthorized`: Token inválido o expirado
-
----
-
-## 👤 **ENDPOINTS DE USUARIOS** (`/users`)
-
-### GET /users/profile
+### GET /auth/profile
 **Descripción:** Obtener perfil del usuario autenticado
 - **Método:** `GET`
-- **URL:** `/users/profile`
-- **Autenticación:** Requerida (JWT)
-- **Parámetros:** Ninguno
+- **URL:** `/auth/profile`
+- **Autenticación:** Requerida
 - **Respuesta:**
   ```json
   {
@@ -133,1031 +94,1151 @@ https://9dbdcf7272a6.ngrok-free.app
     "email": "string",
     "name": "string",
     "role": "string",
-    "address": {
-      "street": "string",
-      "city": "string",
-      "zip": "string",
-      "country": "string"
-    },
-    "createdAt": "date",
-    "updatedAt": "date"
+    "addresses": [...],
+    "createdAt": "string"
   }
   ```
-- **Errores:**
-  - `401 Unauthorized`: Token inválido
-  - `404 Not Found`: Usuario no encontrado
-
-### PUT /users/profile
-**Descripción:** Actualizar perfil del usuario autenticado
-- **Método:** `PUT`
-- **URL:** `/users/profile`
-- **Autenticación:** Requerida (JWT)
-- **Body:**
-  ```json
-  {
-    "name": "string (opcional)",
-    "street": "string (opcional)",
-    "city": "string (opcional)",
-    "zip": "string (opcional)",
-    "country": "string (opcional)"
-  }
-  ```
-- **Respuesta:** Mismo formato que GET /users/profile
-- **Errores:**
-  - `400 Bad Request`: Datos inválidos
-  - `401 Unauthorized`: Token inválido
-
-### GET /users
-**Descripción:** Obtener todos los usuarios (solo administradores)
-- **Método:** `GET`
-- **URL:** `/users`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:** Ninguno
-- **Respuesta:**
-  ```json
-  [
-    {
-      "_id": "string",
-      "email": "string",
-      "name": "string",
-      "role": "string",
-      "address": "object",
-      "createdAt": "date",
-      "updatedAt": "date"
-    }
-  ]
-  ```
-- **Errores:**
-  - `401 Unauthorized`: Token inválido
-  - `403 Forbidden`: Permisos insuficientes (no es admin)
-
-### PUT /users/:id/role
-**Descripción:** Actualizar rol de usuario (solo administradores)
-- **Método:** `PUT`
-- **URL:** `/users/:id/role`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID del usuario a actualizar
-- **Body:**
-  ```json
-  {
-    "role": "user" | "admin"
-  }
-  ```
-- **Respuesta:** Objeto User actualizado
-- **Errores:**
-  - `400 Bad Request`: Rol inválido
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Usuario no encontrado
-
-### DELETE /users/:id
-**Descripción:** Eliminar usuario (solo administradores)
-- **Método:** `DELETE`
-- **URL:** `/users/:id`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID del usuario a eliminar
-- **Respuesta:** `void` (204 No Content)
-- **Errores:**
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Usuario no encontrado
 
 ---
 
-## 🛍️ **ENDPOINTS DE PRODUCTOS** (`/products`)
+## 📦 **ENDPOINTS DE PRODUCTOS** (`/products`)
 
 ### GET /products
-**Descripción:** Obtener todos los productos con filtros opcionales
+**Descripción:** Obtener lista de productos con filtros
 - **Método:** `GET`
 - **URL:** `/products`
-- **Autenticación:** No requerida (`@Public()`)
+- **Autenticación:** No requerida
 - **Query Parameters:**
-  - `category`: Filtro por categoría
-  - `minPrice`: Precio mínimo
-  - `maxPrice`: Precio máximo
-  - `isPreorder`: Filtro por pre-orden (true/false)
-  - `isFeatured`: Filtro por destacados (true/false)
+  - `page`: número de página (default: 1)
+  - `limit`: productos por página (default: 10)
+  - `category`: filtrar por categoría
+  - `search`: búsqueda por nombre
+  - `minPrice`: precio mínimo
+  - `maxPrice`: precio máximo
+  - `sortBy`: campo para ordenar (price, name, createdAt)
+  - `sortOrder`: asc/desc
 - **Respuesta:**
   ```json
-  [
-    {
-      "_id": "string",
-      "name": "string",
-      "description": "string",
-      "price": "number",
-      "category": "string",
-      "sizes": ["string"],
-      "images": ["string"],
-      "stock": "number",
-      "isPreorder": "boolean",
-      "isFeatured": "boolean",
-      "createdAt": "date",
-      "updatedAt": "date"
-    }
-  ]
+  {
+    "products": [...],
+    "total": 100,
+    "page": 1,
+    "totalPages": 10
+  }
   ```
-- **Errores:** Ninguno
-
-### GET /products/search
-**Descripción:** Buscar productos por texto
-- **Método:** `GET`
-- **URL:** `/products/search`
-- **Autenticación:** No requerida (`@Public()`)
-- **Query Parameters:**
-  - `q`: Término de búsqueda
-- **Respuesta:** Array de productos que coinciden con la búsqueda
-- **Errores:** Ninguno
-
-### GET /products/preorders
-**Descripción:** Obtener productos en pre-orden
-- **Método:** `GET`
-- **URL:** `/products/preorders`
-- **Autenticación:** No requerida (`@Public()`)
-- **Respuesta:** Array de productos con `isPreorder: true`
-- **Errores:** Ninguno
-
-### GET /products/featured
-**Descripción:** Obtener productos destacados
-- **Método:** `GET`
-- **URL:** `/products/featured`
-- **Autenticación:** No requerida (`@Public()`)
-- **Respuesta:** Array de productos con `isFeatured: true`
-- **Errores:** Ninguno
 
 ### GET /products/:id
-**Descripción:** Obtener producto por ID
+**Descripción:** Obtener producto específico
 - **Método:** `GET`
 - **URL:** `/products/:id`
-- **Autenticación:** No requerida (`@Public()`)
-- **Parámetros:**
-  - `id` (path): ID del producto
-- **Respuesta:** Objeto Product
-- **Errores:**
-  - `404 Not Found`: Producto no encontrado
+- **Autenticación:** No requerida
+- **Respuesta:**
+  ```json
+  {
+    "_id": "string",
+    "name": "string",
+    "description": "string",
+    "price": 1999.99,
+    "category": "string",
+    "images": [...],
+    "stock": 50,
+    "isActive": true
+  }
+  ```
 
 ### POST /products
-**Descripción:** Crear nuevo producto (solo administradores)
+**Descripción:** Crear nuevo producto (Admin)
 - **Método:** `POST`
 - **URL:** `/products`
-- **Autenticación:** Requerida (JWT + rol admin)
+- **Autenticación:** Requerida (Admin)
 - **Body:**
   ```json
   {
     "name": "string",
     "description": "string",
-    "price": "number",
+    "price": 1999.99,
     "category": "string",
-    "sizes": ["string"],
-    "images": ["string"] (opcional),
-    "stock": "number",
-    "isPreorder": "boolean" (opcional),
-    "isFeatured": "boolean" (opcional)
+    "stock": 50,
+    "images": ["url1", "url2"]
   }
   ```
-- **Respuesta:** Objeto Product creado
-- **Errores:**
-  - `400 Bad Request`: Datos inválidos
-  - `403 Forbidden`: Permisos insuficientes
 
 ### PUT /products/:id
-**Descripción:** Actualizar producto (solo administradores)
+**Descripción:** Actualizar producto (Admin)
 - **Método:** `PUT`
 - **URL:** `/products/:id`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID del producto
-- **Body:** Mismo formato que POST, todos los campos opcionales
-- **Respuesta:** Objeto Product actualizado
-- **Errores:**
-  - `400 Bad Request`: Datos inválidos
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Producto no encontrado
+- **Autenticación:** Requerida (Admin)
 
 ### DELETE /products/:id
-**Descripción:** Eliminar producto (solo administradores)
+**Descripción:** Eliminar producto (Admin)
 - **Método:** `DELETE`
 - **URL:** `/products/:id`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID del producto
-- **Respuesta:** `void` (204 No Content)
-- **Errores:**
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Producto no encontrado
-
-### POST /products/:id/images
-**Descripción:** Agregar imagen a producto (solo administradores)
-- **Método:** `POST`
-- **URL:** `/products/:id/images`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID del producto
-- **Body:**
-  ```json
-  {
-    "imageUrl": "string"
-  }
-  ```
-- **Respuesta:** Objeto Product actualizado
-- **Errores:**
-  - `400 Bad Request`: URL inválida
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Producto no encontrado
+- **Autenticación:** Requerida (Admin)
 
 ---
 
 ## 🛒 **ENDPOINTS DE CARRITO** (`/cart`)
 
 ### GET /cart
-**Descripción:** Obtener carrito del usuario autenticado
+**Descripción:** Obtener carrito del usuario
 - **Método:** `GET`
 - **URL:** `/cart`
-- **Autenticación:** Requerida (JWT)
+- **Autenticación:** Requerida
 - **Respuesta:**
   ```json
   {
-    "_id": "string",
-    "userId": "string",
     "items": [
       {
         "_id": "string",
-        "product": {
-          "_id": "string",
-          "name": "string",
-          "price": "number",
-          "images": ["string"]
-        },
-        "quantity": "number",
-        "size": "string"
+        "productId": "string",
+        "productName": "string",
+        "quantity": 2,
+        "price": 1999.99,
+        "size": "M",
+        "color": "Azul"
       }
     ],
-    "createdAt": "date",
-    "updatedAt": "date"
+    "total": 3999.98,
+    "totalItems": 2
   }
   ```
-- **Errores:**
-  - `401 Unauthorized`: Token inválido
 
 ### POST /cart/add
 **Descripción:** Agregar producto al carrito
 - **Método:** `POST`
 - **URL:** `/cart/add`
-- **Autenticación:** Requerida (JWT)
+- **Autenticación:** Requerida
 - **Body:**
   ```json
   {
-    "productId": "string (MongoDB ObjectId)",
-    "quantity": "number (mínimo 1)",
-    "size": "string (opcional)"
+    "productId": "string",
+    "quantity": 2,
+    "size": "M",
+    "color": "Azul"
   }
   ```
-- **Respuesta:** Objeto Cart actualizado
-- **Errores:**
-  - `400 Bad Request`: Datos inválidos
-  - `404 Not Found`: Producto no encontrado
-  - `401 Unauthorized`: Token inválido
 
-### PUT /cart/update/:itemId
-**Descripción:** Actualizar cantidad o talla de item en carrito
+### PUT /cart/:itemId
+**Descripción:** Actualizar cantidad de item en carrito
 - **Método:** `PUT`
-- **URL:** `/cart/update/:itemId`
-- **Autenticación:** Requerida (JWT)
-- **Parámetros:**
-  - `itemId` (path): ID del item en el carrito
+- **URL:** `/cart/:itemId`
+- **Autenticación:** Requerida
 - **Body:**
   ```json
   {
-    "quantity": "number (mínimo 1, opcional)",
-    "size": "string (opcional)"
+    "quantity": 3
   }
   ```
-- **Respuesta:** Objeto Cart actualizado
-- **Errores:**
-  - `400 Bad Request`: Datos inválidos
-  - `404 Not Found`: Item no encontrado
-  - `401 Unauthorized`: Token inválido
 
-### DELETE /cart/remove/:itemId
+### DELETE /cart/:itemId
 **Descripción:** Eliminar item del carrito
 - **Método:** `DELETE`
-- **URL:** `/cart/remove/:itemId`
-- **Autenticación:** Requerida (JWT)
-- **Parámetros:**
-  - `itemId` (path): ID del item en el carrito
-- **Respuesta:** Objeto Cart actualizado
-- **Errores:**
-  - `404 Not Found`: Item no encontrado
-  - `401 Unauthorized`: Token inválido
+- **URL:** `/cart/:itemId`
+- **Autenticación:** Requerida
 
-### POST /cart/checkout
-**Descripción:** Procesar checkout del carrito (crear pago)
-- **Método:** `POST`
-- **URL:** `/cart/checkout`
-- **Autenticación:** Requerida (JWT)
-- **Query Parameters:**
-  - `returnUrl` (opcional): URL de retorno después del pago
-  - `cancelUrl` (opcional): URL de cancelación del pago
-- **Respuesta:** Objeto Payment con URL de aprobación de PayPal
-- **Errores:**
-  - `400 Bad Request`: Carrito vacío o datos inválidos
-  - `401 Unauthorized`: Token inválido
-
-### GET /cart/total
-**Descripción:** Obtener total del carrito
+### GET /cart/summary-with-discounts
+**Descripción:** Obtener resumen del carrito con descuentos aplicados
 - **Método:** `GET`
-- **URL:** `/cart/total`
-- **Autenticación:** Requerida (JWT)
+- **URL:** `/cart/summary-with-discounts`
+- **Autenticación:** Requerida
+- **Query Parameters:**
+  - `couponCode`: código de cupón opcional
 - **Respuesta:**
   ```json
   {
-    "total": "number",
-    "currency": "USD",
-    "itemCount": "number"
+    "items": [...],
+    "subtotal": 3999.98,
+    "discounts": [
+      {
+        "type": "percentage",
+        "amount": 799.99,
+        "description": "20% OFF"
+      }
+    ],
+    "total": 3200.00,
+    "shipping": 500.00,
+    "finalTotal": 3700.00
   }
   ```
-- **Errores:**
-  - `401 Unauthorized`: Token inválido
 
 ---
 
-## 📦 **ENDPOINTS DE ÓRDENES** (`/orders`)
+## 🎁 **ENDPOINTS DE PROMOCIONES** (`/promotions`)
 
-### POST /orders
-**Descripción:** Crear orden desde carrito parcial
-- **Método:** `POST`
-- **URL:** `/orders`
-- **Autenticación:** Requerida (JWT)
-- **Body:**
-  ```json
-  {
-    "items": [
-      {
-        "itemId": "string",
-        "quantity": "number"
-      }
-    ],
-    "cartId": "string (MongoDB ObjectId)",
-    "shippingAddress": {
-      "street": "string",
-      "city": "string",
-      "zip": "string",
-      "country": "string"
-    }
-  }
-  ```
-- **Respuesta:** Objeto Order creado
-- **Errores:**
-  - `400 Bad Request`: Datos inválidos
-  - `404 Not Found`: Carrito o items no encontrados
-  - `401 Unauthorized`: Token inválido
-
-### GET /orders
-**Descripción:** Obtener todas las órdenes (solo administradores)
+### GET /promotions/active
+**Descripción:** Obtener promociones activas
 - **Método:** `GET`
-- **URL:** `/orders`
-- **Autenticación:** Requerida (JWT + rol admin)
+- **URL:** `/promotions/active`
+- **Autenticación:** No requerida
+- **Query Parameters:**
+  - `type`: tipo de promoción
+  - `category`: categoría específica
 - **Respuesta:**
   ```json
-  [
-    {
-      "_id": "string",
-      "items": [
-        {
-          "product": "Product object",
-          "quantity": "number",
-          "size": "string",
-          "price": "number"
-        }
-      ],
-      "userId": "User object",
-      "cartId": "Cart object",
-      "total": "number",
-      "status": "pending" | "paid" | "shipped" | "delivered" | "cancelled",
-      "shippingAddress": {
-        "street": "string",
-        "city": "string",
-        "zip": "string",
-        "country": "string"
-      },
-      "createdAt": "date",
-      "updatedAt": "date"
-    }
-  ]
+  {
+    "promotions": [
+      {
+        "_id": "string",
+        "name": "string",
+        "type": "percentage",
+        "description": "string",
+        "discountPercentage": 20,
+        "startDate": "2025-01-21T00:00:00Z",
+        "endDate": "2025-01-31T23:59:59Z"
+      }
+    ]
+  }
   ```
-- **Errores:**
-  - `403 Forbidden`: Permisos insuficientes
-  - `401 Unauthorized`: Token inválido
 
-### GET /orders/:id
-**Descripción:** Obtener orden por ID
+### GET /promotions/types
+**Descripción:** Obtener todos los tipos de promociones disponibles
 - **Método:** `GET`
-- **URL:** `/orders/:id`
-- **Autenticación:** Requerida (JWT)
-- **Parámetros:**
-  - `id` (path): ID de la orden
-- **Respuesta:** Objeto Order
-- **Errores:**
-  - `403 Forbidden`: No es tu orden y no eres admin
-  - `404 Not Found`: Orden no encontrada
-  - `401 Unauthorized`: Token inválido
+- **URL:** `/promotions/types`
+- **Autenticación:** No requerida
+- **Respuesta:**
+  ```json
+  {
+    "types": [
+      {
+        "id": "percentage",
+        "name": "Descuento Porcentual",
+        "description": "Descuento por porcentaje"
+      },
+      {
+        "id": "pay_x_get_y",
+        "name": "Pagar X y Llevar Y",
+        "description": "Pagas X cantidad y te llevas Y cantidad"
+      },
+      {
+        "id": "progressive_quantity_discount",
+        "name": "Descuento Progresivo",
+        "description": "Descuentos progresivos por cantidad"
+      }
+    ]
+  }
+  ```
 
-### PUT /orders/:id/status
-**Descripción:** Actualizar estado de orden (solo administradores)
-- **Método:** `PUT`
-- **URL:** `/orders/:id/status`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID de la orden
+### POST /promotions/apply-discounts
+**Descripción:** Calcular descuentos para carrito
+- **Método:** `POST`
+- **URL:** `/promotions/apply-discounts`
+- **Autenticación:** Requerida
 - **Body:**
   ```json
   {
-    "status": "pending" | "paid" | "shipped" | "delivered" | "cancelled"
+    "couponCode": "SAVE20",
+    "cartItems": [
+      {
+        "productId": "string",
+        "cartItemId": "string",
+        "productName": "string",
+        "category": "string",
+        "quantity": 2,
+        "price": 1999.99,
+        "size": "M"
+      }
+    ],
+    "totalAmount": 3999.98
   }
   ```
-- **Respuesta:** Objeto Order actualizado
-- **Errores:**
-  - `400 Bad Request`: Estado inválido
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Orden no encontrada
-  - `401 Unauthorized`: Token inválido
+- **Respuesta:**
+  ```json
+  {
+    "discounts": [
+      {
+        "promotionId": "string",
+        "promotionName": "string",
+        "type": "percentage",
+        "discountAmount": 799.99,
+        "appliedToItems": ["product_id"],
+        "description": "20% OFF"
+      }
+    ],
+    "totalDiscount": 799.99,
+    "finalAmount": 3200.00
+  }
+  ```
+
+### POST /promotions/apply-to-cart
+**Descripción:** Aplicar promociones automáticamente al carrito
+- **Método:** `POST`
+- **URL:** `/promotions/apply-to-cart`
+- **Autenticación:** Requerida
+- **Body:**
+  ```json
+  {
+    "productId": "string",
+    "quantity": 2,
+    "price": 1999.99
+  }
+  ```
+- **Respuesta:**
+  ```json
+  {
+    "updates": [
+      {
+        "userId": "string",
+        "productId": "string",
+        "promotionId": "string",
+        "promotionName": "string",
+        "discountAmount": 400.00,
+        "originalPrice": 3999.98,
+        "discountedPrice": 3599.98,
+        "appliedAt": "2025-01-21T10:30:00Z"
+      }
+    ]
+  }
+  ```
+
+### GET /promotions/user-eligible
+**Descripción:** Obtener promociones elegibles para el usuario
+- **Método:** `GET`
+- **URL:** `/promotions/user-eligible`
+- **Autenticación:** Requerida
+- **Respuesta:**
+  ```json
+  {
+    "promotions": [
+      {
+        "_id": "string",
+        "name": "string",
+        "type": "first_purchase_discount",
+        "discountPercentage": 30,
+        "description": "Descuento por primera compra"
+      }
+    ]
+  }
+  ```
+
+### POST /promotions/validate-coupon
+**Descripción:** Validar cupón sin aplicarlo
+- **Método:** `POST`
+- **URL:** `/promotions/validate-coupon`
+- **Autenticación:** No requerida
+- **Body:**
+  ```json
+  {
+    "couponCode": "SAVE20",
+    "userId": "string"
+  }
+  ```
+- **Respuesta:**
+  ```json
+  {
+    "valid": true,
+    "coupon": {
+      "code": "SAVE20",
+      "discountPercentage": 20,
+      "validUntil": "2025-12-31T23:59:59Z"
+    },
+    "message": "Cupón válido"
+  }
+  ```
+
+### GET /promotions/coupons/public
+**Descripción:** Obtener cupones públicos disponibles
+- **Método:** `GET`
+- **URL:** `/promotions/coupons/public`
+- **Autenticación:** No requerida
+
+### GET /promotions/category/:category
+**Descripción:** Promociones específicas de una categoría
+- **Método:** `GET`
+- **URL:** `/promotions/category/:category`
+- **Autenticación:** No requerida
+
+### GET /promotions/product/:productId
+**Descripción:** Promociones específicas de un producto
+- **Método:** `GET`
+- **URL:** `/promotions/product/:productId`
+- **Autenticación:** No requerida
+
+### POST /promotions (Admin)
+**Descripción:** Crear nueva promoción
+- **Método:** `POST`
+- **URL:** `/promotions`
+- **Autenticación:** Requerida (Admin)
+- **Body:**
+  ```json
+  {
+    "name": "3x2 en Remeras",
+    "type": "pay_x_get_y",
+    "target": "specific_products",
+    "startDate": "2025-01-21T00:00:00Z",
+    "endDate": "2025-01-31T23:59:59Z",
+    "conditions": {
+      "specificProducts": ["product_id_1", "product_id_2"],
+      "minimumQuantity": 2
+    },
+    "rules": {
+      "payQuantity": 2,
+      "getTotalQuantity": 3
+    },
+    "autoApplyToCart": true,
+    "retroactiveApplication": true,
+    "notifyCartUsers": true,
+    "priority": 8
+  }
+  ```
+
+### POST /promotions/bulk (Admin)
+**Descripción:** Crear promoción masiva
+- **Método:** `POST`
+- **URL:** `/promotions/bulk`
+- **Autenticación:** Requerida (Admin)
+
+### POST /promotions/segment (Admin)
+**Descripción:** Crear promoción para segmento
+- **Método:** `POST`
+- **URL:** `/promotions/segment`
+- **Autenticación:** Requerida (Admin)
+
+### POST /promotions/:id/apply-retroactive (Admin)
+**Descripción:** Aplicar promoción retroactivamente a carritos existentes
+- **Método:** `POST`
+- **URL:** `/promotions/:id/apply-retroactive`
+- **Autenticación:** Requerida (Admin)
+
+### GET /promotions/admin/stats (Admin)
+**Descripción:** Estadísticas de promociones
+- **Método:** `GET`
+- **URL:** `/promotions/admin/stats`
+- **Autenticación:** Requerida (Admin)
+
+---
+
+## 📧 **ENDPOINTS DE NOTIFICACIONES** (`/notifications`)
+
+### GET /notifications
+**Descripción:** Obtener notificaciones del usuario
+- **Método:** `GET`
+- **URL:** `/notifications`
+- **Autenticación:** Requerida
+- **Query Parameters:**
+  - `limit`: número de notificaciones (default: 10)
+  - `offset`: offset para paginación (default: 0)
+  - `status`: filtrar por estado (pending, sent, delivered, read, failed)
+  - `type`: filtrar por tipo de notificación
+- **Respuesta:**
+  ```json
+  {
+    "notifications": [
+      {
+        "_id": "string",
+        "type": "order_confirmed",
+        "channel": "email",
+        "title": "¡Pedido confirmado!",
+        "content": "Tu pedido #12345 ha sido confirmado",
+        "status": "delivered",
+        "priority": "medium",
+        "createdAt": "2025-01-21T10:30:00Z",
+        "readAt": null,
+        "isRead": false
+      }
+    ],
+    "total": 25
+  }
+  ```
+
+### GET /notifications/unread-count
+**Descripción:** Obtener contador de notificaciones no leídas
+- **Método:** `GET`
+- **URL:** `/notifications/unread-count`
+- **Autenticación:** Requerida
+- **Respuesta:**
+  ```json
+  {
+    "count": 5
+  }
+  ```
+
+### PUT /notifications/:id/read
+**Descripción:** Marcar notificación como leída
+- **Método:** `PUT`
+- **URL:** `/notifications/:id/read`
+- **Autenticación:** Requerida
+- **Respuesta:** 204 No Content
+
+### PUT /notifications/read-all
+**Descripción:** Marcar todas las notificaciones como leídas
+- **Método:** `PUT`
+- **URL:** `/notifications/read-all`
+- **Autenticación:** Requerida
+- **Respuesta:** 204 No Content
+
+### GET /notifications/preferences
+**Descripción:** Obtener preferencias de notificaciones del usuario
+- **Método:** `GET`
+- **URL:** `/notifications/preferences`
+- **Autenticación:** Requerida
+- **Respuesta:**
+  ```json
+  {
+    "userId": "string",
+    "preferences": {
+      "order_confirmed": "all_channels",
+      "order_shipped": ["email", "push"],
+      "promotion": "email"
+    },
+    "channelSettings": {
+      "emailEnabled": true,
+      "smsEnabled": false,
+      "pushEnabled": true,
+      "inAppEnabled": true,
+      "quietHoursStart": "22:00",
+      "quietHoursEnd": "08:00"
+    },
+    "allowMarketing": true,
+    "allowTransactional": true,
+    "language": "es",
+    "timezone": "America/Argentina/Buenos_Aires"
+  }
+  ```
+
+### PUT /notifications/preferences
+**Descripción:** Actualizar preferencias de notificaciones
+- **Método:** `PUT`
+- **URL:** `/notifications/preferences`
+- **Autenticación:** Requerida
+- **Body:**
+  ```json
+  {
+    "preferences": {
+      "order_confirmed": "email",
+      "promotion": "none"
+    },
+    "channelSettings": {
+      "emailEnabled": true,
+      "smsEnabled": false
+    },
+    "allowMarketing": false
+  }
+  ```
+
+### POST /notifications (Admin)
+**Descripción:** Crear notificación
+- **Método:** `POST`
+- **URL:** `/notifications`
+- **Autenticación:** Requerida (Admin)
+- **Body:**
+  ```json
+  {
+    "userId": "string",
+    "type": "promotion",
+    "channel": "email",
+    "title": "¡Nueva promoción!",
+    "content": "Tienes una nueva promoción disponible",
+    "data": {
+      "promotionId": "string",
+      "discountPercentage": 20
+    },
+    "priority": "medium",
+    "scheduledFor": "2025-01-21T15:00:00Z"
+  }
+  ```
+
+### POST /notifications/bulk (Admin)
+**Descripción:** Crear notificación masiva
+- **Método:** `POST`
+- **URL:** `/notifications/bulk`
+- **Autenticación:** Requerida (Admin)
+
+### POST /notifications/segment (Admin)
+**Descripción:** Crear notificación para segmento
+- **Método:** `POST`
+- **URL:** `/notifications/segment`
+- **Autenticación:** Requerida (Admin)
+
+### GET /notifications/admin/stats (Admin)
+**Descripción:** Estadísticas de notificaciones
+- **Método:** `GET`
+- **URL:** `/notifications/admin/stats`
+- **Autenticación:** Requerida (Admin)
+
+### POST /notifications/webhook/delivery (Webhook)
+**Descripción:** Webhook para actualizaciones de entrega
+- **Método:** `POST`
+- **URL:** `/notifications/webhook/delivery`
+- **Autenticación:** No requerida (`@Public()`)
+
+### POST /notifications/webhook/opened (Webhook)
+**Descripción:** Webhook para emails abiertos
+- **Método:** `POST`
+- **URL:** `/notifications/webhook/opened`
+- **Autenticación:** No requerida (`@Public()`)
+
+### POST /notifications/webhook/clicked (Webhook)
+**Descripción:** Webhook para clicks en emails
+- **Método:** `POST`
+- **URL:** `/notifications/webhook/clicked`
+- **Autenticación:** No requerida (`@Public()`)
+
+### GET /notifications/unsubscribe/:token
+**Descripción:** Desuscribirse de notificaciones
+- **Método:** `GET`
+- **URL:** `/notifications/unsubscribe/:token`
+- **Autenticación:** No requerida (`@Public()`)
+
+---
+
+## 🚚 **ENDPOINTS DE ENVÍOS** (`/shipping`)
+
+### POST /shipping/calculate
+**Descripción:** Calcular opciones de envío
+- **Método:** `POST`
+- **URL:** `/shipping/calculate`
+- **Autenticación:** Requerida
+- **Body:**
+  ```json
+  {
+    "addressId": "string",
+    "cartItems": [
+      {
+        "productId": "string",
+        "quantity": 2
+      }
+    ]
+  }
+  ```
+- **Respuesta:**
+  ```json
+  {
+    "options": [
+      {
+        "service": "standard",
+        "name": "Envío Estándar",
+        "cost": 500.00,
+        "estimatedDays": 3,
+        "description": "Entrega en 3-5 días hábiles"
+      },
+      {
+        "service": "express",
+        "name": "Envío Express",
+        "cost": 800.00,
+        "estimatedDays": 1,
+        "description": "Entrega en 24-48 horas"
+      }
+    ]
+  }
+  ```
+
+### POST /shipping/calculate/cart
+**Descripción:** Calcular envío desde carrito actual
+- **Método:** `POST`
+- **URL:** `/shipping/calculate/cart`
+- **Autenticación:** Requerida
+- **Body:**
+  ```json
+  {
+    "addressId": "string",
+    "service": "standard"
+  }
+  ```
+
+### GET /shipping/quote/:addressId
+**Descripción:** Obtener cotización rápida
+- **Método:** `GET`
+- **URL:** `/shipping/quote/:addressId`
+- **Autenticación:** Requerida
+
+### GET /shipping/services
+**Descripción:** Obtener servicios de envío disponibles
+- **Método:** `GET`
+- **URL:** `/shipping/services`
+- **Autenticación:** No requerida
+- **Query Parameters:**
+  - `zone`: zona de entrega (CABA, GBA, INTERIOR)
+- **Respuesta:**
+  ```json
+  {
+    "services": [
+      {
+        "id": "standard",
+        "name": "Envío Estándar",
+        "description": "Entrega en 3-5 días hábiles",
+        "features": ["Seguimiento incluido", "Entrega en domicilio"],
+        "maxWeight": 30,
+        "maxDimensions": {
+          "length": 100,
+          "width": 100,
+          "height": 100
+        },
+        "availableIn": ["CABA", "GBA", "INTERIOR"]
+      }
+    ]
+  }
+  ```
+
+### GET /shipping/coverage
+**Descripción:** Obtener información de cobertura
+- **Método:** `GET`
+- **URL:** `/shipping/coverage`
+- **Autenticación:** No requerida
+
+### GET /shipping/tracking/:trackingNumber
+**Descripción:** Obtener información de seguimiento
+- **Método:** `GET`
+- **URL:** `/shipping/tracking/:trackingNumber`
+- **Autenticación:** Requerida
+- **Respuesta:**
+  ```json
+  {
+    "trackingNumber": "string",
+    "status": "in_transit",
+    "estimatedDelivery": "2025-01-25T18:00:00Z",
+    "history": [
+      {
+        "timestamp": "2025-01-21T10:30:00Z",
+        "status": "created",
+        "description": "Envío creado",
+        "location": "Centro de distribución"
+      },
+      {
+        "timestamp": "2025-01-22T08:15:00Z",
+        "status": "in_transit",
+        "description": "En tránsito",
+        "location": "CABA"
+      }
+    ]
+  }
+  ```
+
+### GET /shipping/delivery-estimate
+**Descripción:** Obtener estimación de entrega
+- **Método:** `GET`
+- **URL:** `/shipping/delivery-estimate`
+- **Autenticación:** No requerida
+- **Query Parameters:**
+  - `service`: tipo de servicio
+  - `zone`: zona de destino
+- **Respuesta:**
+  ```json
+  {
+    "service": "standard",
+    "zone": "CABA",
+    "estimatedDays": 3,
+    "estimatedDate": "2025-01-25T18:00:00Z",
+    "businessDays": true
+  }
+  ```
+
+### POST /shipping/create (Admin)
+**Descripción:** Crear envío
+- **Método:** `POST`
+- **URL:** `/shipping/create`
+- **Autenticación:** Requerida (Admin)
+
+### GET /shipping/admin/shipments (Admin)
+**Descripción:** Obtener todos los envíos (Admin)
+- **Método:** `GET`
+- **URL:** `/shipping/admin/shipments`
+- **Autenticación:** Requerida (Admin)
+
+### POST /shipping/webhook/status (Webhook)
+**Descripción:** Webhook para actualizaciones de estado
+- **Método:** `POST`
+- **URL:** `/shipping/webhook/status`
+- **Autenticación:** No requerida (`@Public()`)
 
 ---
 
 ## 💳 **ENDPOINTS DE PAGOS** (`/payments`)
 
-### POST /payments
-**Descripción:** Crear nuevo pago
+### POST /payments/create-order
+**Descripción:** Crear orden de pago PayPal
 - **Método:** `POST`
-- **URL:** `/payments`
-- **Autenticación:** Requerida (JWT)
+- **URL:** `/payments/create-order`
+- **Autenticación:** Requerida
+- **Body:**
+  ```json
+  {
+    "cartItems": [
+      {
+        "productId": "string",
+        "quantity": 2,
+        "price": 1999.99
+      }
+    ],
+    "shippingCost": 500.00,
+    "couponCode": "SAVE20"
+  }
+  ```
+- **Respuesta:**
+  ```json
+  {
+    "orderId": "string",
+    "approvalUrl": "https://www.sandbox.paypal.com/checkoutnow?token=...",
+    "amount": {
+      "total": 3700.00,
+      "currency": "USD"
+    }
+  }
+  ```
+
+### POST /payments/capture-order
+**Descripción:** Capturar pago aprobado
+- **Método:** `POST`
+- **URL:** `/payments/capture-order`
+- **Autenticación:** Requerida
 - **Body:**
   ```json
   {
     "orderId": "string",
-    "description": "string (opcional)",
-    "items": [
+    "paymentId": "string",
+    "payerId": "string"
+  }
+  ```
+
+### POST /payments/cancel-order
+**Descripción:** Cancelar orden de pago
+- **Método:** `POST`
+- **URL:** `/payments/cancel-order`
+- **Autenticación:** Requerida
+
+### GET /payments/order/:orderId
+**Descripción:** Obtener detalles de orden de pago
+- **Método:** `GET`
+- **URL:** `/payments/order/:orderId`
+- **Autenticación:** Requerida
+
+### POST /payments/webhook
+**Descripción:** Webhook de PayPal
+- **Método:** `POST`
+- **URL:** `/payments/webhook`
+- **Autenticación:** No requerida (`@Public()`)
+
+---
+
+## 📋 **ENDPOINTS DE ÓRDENES** (`/orders`)
+
+### GET /orders
+**Descripción:** Obtener órdenes del usuario
+- **Método:** `GET`
+- **URL:** `/orders`
+- **Autenticación:** Requerida
+- **Query Parameters:**
+  - `page`: página (default: 1)
+  - `limit`: órdenes por página (default: 10)
+  - `status`: filtrar por estado
+- **Respuesta:**
+  ```json
+  {
+    "orders": [
       {
-        "name": "string",
-        "description": "string (opcional)",
-        "quantity": "number",
-        "price": "number",
-        "currency": "string (opcional, default USD)"
+        "_id": "string",
+        "orderNumber": "ORD-001",
+        "status": "completed",
+        "total": 3700.00,
+        "items": [...],
+        "shippingAddress": {...},
+        "paymentStatus": "completed",
+        "createdAt": "2025-01-21T10:30:00Z"
       }
     ],
-    "totalAmount": "number",
-    "currency": "string (opcional, default USD)",
-    "returnUrl": "string (opcional)",
-    "cancelUrl": "string (opcional)"
+    "total": 15,
+    "page": 1,
+    "totalPages": 2
   }
   ```
-- **Respuesta:**
-  ```json
-  {
-    "id": "string",
-    "status": "string",
-    "approvalUrl": "string",
-    "error": "string (si hay error)"
-  }
-  ```
-- **Errores:**
-  - `400 Bad Request`: Datos inválidos
-  - `401 Unauthorized`: Token inválido
 
-### POST /payments/from-cart
-**Descripción:** Crear pago desde carrito
-- **Método:** `POST`
-- **URL:** `/payments/from-cart`
-- **Autenticación:** Requerida (JWT)
-- **Query Parameters:**
-  - `returnUrl` (opcional): URL de retorno
-  - `cancelUrl` (opcional): URL de cancelación
-- **Respuesta:** Objeto Payment con approvalUrl
-- **Errores:**
-  - `400 Bad Request`: Carrito vacío
-  - `401 Unauthorized`: Token inválido
+### GET /orders/:id
+**Descripción:** Obtener orden específica
+- **Método:** `GET`
+- **URL:** `/orders/:id`
+- **Autenticación:** Requerida
 
-### POST /payments/:paymentId/capture
-**Descripción:** Capturar pago completado
+### POST /orders
+**Descripción:** Crear nueva orden
 - **Método:** `POST`
-- **URL:** `/payments/:paymentId/capture`
-- **Autenticación:** Requerida (JWT)
-- **Parámetros:**
-  - `paymentId` (path): ID del pago
+- **URL:** `/orders`
+- **Autenticación:** Requerida
 - **Body:**
   ```json
   {
-    "paymentId": "string",
-    "payerId": "string (opcional)"
+    "cartItems": [...],
+    "shippingAddressId": "string",
+    "paymentMethod": "paypal",
+    "couponCode": "SAVE20"
   }
   ```
-- **Respuesta:** Objeto Payment capturado
-- **Errores:**
-  - `400 Bad Request`: Pago no capturable
-  - `404 Not Found`: Pago no encontrado
-  - `401 Unauthorized`: Token inválido
 
-### GET /payments/:paymentId
-**Descripción:** Obtener pago por ID
+### PUT /orders/:id/cancel
+**Descripción:** Cancelar orden
+- **Método:** `PUT`
+- **URL:** `/orders/:id/cancel`
+- **Autenticación:** Requerida
+
+### GET /orders/admin/orders (Admin)
+**Descripción:** Obtener todas las órdenes (Admin)
 - **Método:** `GET`
-- **URL:** `/payments/:paymentId`
-- **Autenticación:** Requerida (JWT)
-- **Parámetros:**
-  - `paymentId` (path): ID del pago
-- **Respuesta:** Objeto Payment
-- **Errores:**
-  - `404 Not Found`: Pago no encontrado
-  - `401 Unauthorized`: Token inválido
+- **URL:** `/orders/admin/orders`
+- **Autenticación:** Requerida (Admin)
 
-### GET /payments
-**Descripción:** Obtener pagos del usuario
-- **Método:** `GET`
-- **URL:** `/payments`
-- **Autenticación:** Requerida (JWT)
-- **Query Parameters:**
-  - `limit`: Número de resultados (1-100, default 10)
-  - `offset`: Número de resultados a saltar (default 0)
-- **Respuesta:** Array de objetos Payment
-- **Errores:**
-  - `400 Bad Request`: Parámetros inválidos
-  - `401 Unauthorized`: Token inválido
-
-### DELETE /payments/:paymentId
-**Descripción:** Cancelar pago
-- **Método:** `DELETE`
-- **URL:** `/payments/:paymentId`
-- **Autenticación:** Requerida (JWT)
-- **Parámetros:**
-  - `paymentId` (path): ID del pago
-- **Respuesta:**
-  ```json
-  {
-    "message": "Payment cancelled successfully"
-  }
-  ```
-- **Errores:**
-  - `400 Bad Request`: Pago no cancelable
-  - `404 Not Found`: Pago no encontrado
-  - `401 Unauthorized`: Token inválido
-
-### GET /payments/success
-**Descripción:** Endpoint de retorno después de pago exitoso
-- **Método:** `GET`
-- **URL:** `/payments/success`
-- **Autenticación:** No requerida
-- **Query Parameters:**
-  - `paymentId`: ID del pago de PayPal
-  - `PayerID`: ID del pagador de PayPal
-- **Respuesta:**
-  ```json
-  {
-    "success": "boolean",
-    "message": "string",
-    "payment": "Payment object (si exitoso)",
-    "error": "string (si hay error)"
-  }
-  ```
-- **Errores:** Ninguno (manejado internamente)
-
-### GET /payments/cancel
-**Descripción:** Endpoint de retorno después de cancelación de pago
-- **Método:** `GET`
-- **URL:** `/payments/cancel`
-- **Autenticación:** No requerida
-- **Query Parameters:**
-  - `token`: Token del pago cancelado
-- **Respuesta:**
-  ```json
-  {
-    "success": "boolean",
-    "message": "string",
-    "error": "string (si hay error)"
-  }
-  ```
-- **Errores:** Ninguno (manejado internamente)
-
-### POST /payments/webhook/paypal
-**Descripción:** Webhook para notificaciones de PayPal
-- **Método:** `POST`
-- **URL:** `/payments/webhook/paypal`
-- **Autenticación:** No requerida
-- **Body:** Datos del webhook de PayPal
-- **Respuesta:**
-  ```json
-  {
-    "status": "received"
-  }
-  ```
-- **Errores:** Ninguno
+### PUT /orders/admin/:id/status (Admin)
+**Descripción:** Actualizar estado de orden (Admin)
+- **Método:** `PUT`
+- **URL:** `/orders/admin/:id/status`
+- **Autenticación:** Requerida (Admin)
 
 ---
 
-## 🖼️ **ENDPOINTS DE MEDIA** (`/media`)
+## ⭐ **ENDPOINTS DE RESEÑAS** (`/reviews`)
 
-### POST /media/upload
-**Descripción:** Subir archivo de imagen (solo administradores)
+### GET /reviews/product/:productId
+**Descripción:** Obtener reseñas de un producto
+- **Método:** `GET`
+- **URL:** `/reviews/product/:productId`
+- **Autenticación:** No requerida
+- **Query Parameters:**
+  - `page`: página (default: 1)
+  - `limit`: reseñas por página (default: 10)
+  - `rating`: filtrar por calificación (1-5)
+- **Respuesta:**
+  ```json
+  {
+    "reviews": [
+      {
+        "_id": "string",
+        "userId": "string",
+        "userName": "Juan Pérez",
+        "rating": 5,
+        "comment": "Excelente producto",
+        "isVerified": true,
+        "createdAt": "2025-01-21T10:30:00Z"
+      }
+    ],
+    "averageRating": 4.5,
+    "totalReviews": 25,
+    "ratingDistribution": {
+      "5": 15,
+      "4": 7,
+      "3": 2,
+      "2": 1,
+      "1": 0
+    }
+  }
+  ```
+
+### POST /reviews
+**Descripción:** Crear reseña
 - **Método:** `POST`
-- **URL:** `/media/upload`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Content-Type:** `multipart/form-data`
+- **URL:** `/reviews`
+- **Autenticación:** Requerida
 - **Body:**
-  - `file`: Archivo de imagen (JPEG/PNG)
-  - `type`: "product" | "cover"
+  ```json
+  {
+    "productId": "string",
+    "orderId": "string",
+    "rating": 5,
+    "comment": "Excelente producto, muy recomendado",
+    "photos": ["url1", "url2"]
+  }
+  ```
+
+### PUT /reviews/:id
+**Descripción:** Actualizar reseña
+- **Método:** `PUT`
+- **URL:** `/reviews/:id`
+- **Autenticación:** Requerida
+
+### DELETE /reviews/:id
+**Descripción:** Eliminar reseña
+- **Método:** `DELETE`
+- **URL:** `/reviews/:id`
+- **Autenticación:** Requerida
+
+### POST /reviews/:id/like
+**Descripción:** Dar like a reseña
+- **Método:** `POST`
+- **URL:** `/reviews/:id/like`
+- **Autenticación:** Requerida
+
+### GET /reviews/admin/reviews (Admin)
+**Descripción:** Obtener todas las reseñas (Admin)
+- **Método:** `GET`
+- **URL:** `/reviews/admin/reviews`
+- **Autenticación:** Requerida (Admin)
+
+### PUT /reviews/admin/:id/moderate (Admin)
+**Descripción:** Moderar reseña (Admin)
+- **Método:** `PUT`
+- **URL:** `/reviews/admin/:id/moderate`
+- **Autenticación:** Requerida (Admin)
+
+---
+
+## 👑 **ENDPOINTS DE ADMINISTRACIÓN** (`/admin`)
+
+### GET /admin/dashboard
+**Descripción:** Obtener datos del dashboard de administración
+- **Método:** `GET`
+- **URL:** `/admin/dashboard`
+- **Autenticación:** Requerida (Admin)
 - **Respuesta:**
   ```json
   {
-    "_id": "string",
-    "url": "string",
-    "fileName": "string",
-    "type": "string",
-    "mimeType": "string",
-    "active": "boolean",
-    "createdAt": "date",
-    "updatedAt": "date"
+    "stats": {
+      "totalOrders": 1250,
+      "totalRevenue": 125000.00,
+      "totalUsers": 850,
+      "totalProducts": 150,
+      "pendingOrders": 25,
+      "lowStockProducts": 8
+    },
+    "recentOrders": [...],
+    "topProducts": [...],
+    "salesChart": {
+      "labels": ["Ene", "Feb", "Mar"],
+      "data": [10000, 15000, 20000]
+    }
   }
   ```
-- **Errores:**
-  - `400 Bad Request`: Tipo de archivo no permitido
-  - `403 Forbidden`: Permisos insuficientes
-  - `401 Unauthorized`: Token inválido
 
-### GET /media/:id
-**Descripción:** Obtener archivo de media por ID
+### GET /admin/products
+**Descripción:** Gestión de productos (Admin)
 - **Método:** `GET`
-- **URL:** `/media/:id`
-- **Autenticación:** No requerida (`@Public()`)
-- **Parámetros:**
-  - `id` (path): ID del archivo de media
-- **Respuesta:** Objeto Media
-- **Errores:**
-  - `404 Not Found`: Archivo no encontrado
+- **URL:** `/admin/products`
+- **Autenticación:** Requerida (Admin)
 
-### DELETE /media/:id
-**Descripción:** Eliminar archivo de media (solo administradores)
-- **Método:** `DELETE`
-- **URL:** `/media/:id`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID del archivo de media
-- **Respuesta:** `void` (204 No Content)
-- **Errores:**
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Archivo no encontrado
-  - `401 Unauthorized`: Token inválido
+### GET /admin/users
+**Descripción:** Gestión de usuarios (Admin)
+- **Método:** `GET`
+- **URL:** `/admin/users`
+- **Autenticación:** Requerida (Admin)
 
-### POST /media/cover-image/:id
-**Descripción:** Activar imagen como imagen de portada (solo administradores)
-- **Método:** `POST`
-- **URL:** `/media/cover-image/:id`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID del archivo de media
-- **Respuesta:** Objeto Media actualizado
-- **Errores:**
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Archivo no encontrado
-  - `401 Unauthorized`: Token inválido
+### GET /admin/orders
+**Descripción:** Gestión de órdenes (Admin)
+- **Método:** `GET`
+- **URL:** `/admin/orders`
+- **Autenticación:** Requerida (Admin)
 
-### POST /media/cover-image/:id/deactivate
-**Descripción:** Desactivar imagen de portada (solo administradores)
-- **Método:** `POST`
-- **URL:** `/media/cover-image/:id/deactivate`
-- **Autenticación:** Requerida (JWT + rol admin)
-- **Parámetros:**
-  - `id` (path): ID del archivo de media
-- **Respuesta:** Objeto Media actualizado
-- **Errores:**
-  - `403 Forbidden`: Permisos insuficientes
-  - `404 Not Found`: Archivo no encontrado
-  - `401 Unauthorized`: Token inválido
+### GET /admin/reviews
+**Descripción:** Gestión de reseñas (Admin)
+- **Método:** `GET`
+- **URL:** `/admin/reviews`
+- **Autenticación:** Requerida (Admin)
+
+### GET /admin/promotions
+**Descripción:** Gestión de promociones (Admin)
+- **Método:** `GET`
+- **URL:** `/admin/promotions`
+- **Autenticación:** Requerida (Admin)
+
+### GET /admin/analytics
+**Descripción:** Analytics avanzados (Admin)
+- **Método:** `GET`
+- **URL:** `/admin/analytics`
+- **Autenticación:** Requerida (Admin)
 
 ---
 
-## 📊 **CÓDIGOS DE ESTADO HTTP**
+## 📊 **CÓDIGOS DE RESPUESTA HTTP**
 
-### Éxito (2xx)
-- `200 OK`: Solicitud exitosa
-- `201 Created`: Recurso creado exitosamente
-- `204 No Content`: Solicitud exitosa sin contenido de respuesta
+### ✅ **Éxito**
+- `200 OK` - Solicitud exitosa
+- `201 Created` - Recurso creado exitosamente
+- `204 No Content` - Operación exitosa sin contenido
 
-### Error del Cliente (4xx)
-- `400 Bad Request`: Datos de solicitud inválidos
-- `401 Unauthorized`: Token de autenticación inválido o faltante
-- `403 Forbidden`: Permisos insuficientes para la operación
-- `404 Not Found`: Recurso no encontrado
-- `409 Conflict`: Conflicto (ej: email ya existe)
+### ❌ **Errores del Cliente**
+- `400 Bad Request` - Solicitud inválida
+- `401 Unauthorized` - No autenticado
+- `403 Forbidden` - Sin permisos
+- `404 Not Found` - Recurso no encontrado
+- `409 Conflict` - Conflicto (ej: email duplicado)
+- `422 Unprocessable Entity` - Datos de validación incorrectos
 
-### Error del Servidor (5xx)
-- `500 Internal Server Error`: Error interno del servidor
-
----
-
-## 🔑 **AUTENTICACIÓN Y AUTORIZACIÓN**
-
-### JWT Token
-- **Formato:** `Bearer <token>`
-- **Header:** `Authorization: Bearer <jwt_token>`
-- **Expiración:** Configurable en el servidor
-
-### Roles
-- **user**: Usuario estándar (permisos básicos)
-- **admin**: Administrador (acceso completo)
-
-### Endpoints Públicos
-Los siguientes endpoints no requieren autenticación:
-- `GET /`
-- `POST /auth/register`
-- `POST /auth/login`
-- `GET /products/*` (todos los endpoints de productos)
-- `GET /media/:id`
-- `GET /payments/success`
-- `GET /payments/cancel`
-- `POST /payments/webhook/paypal`
+### 🔧 **Errores del Servidor**
+- `500 Internal Server Error` - Error interno del servidor
+- `503 Service Unavailable` - Servicio no disponible
 
 ---
 
-## 📝 **NOTAS IMPORTANTES**
+## 📝 **FORMATOS DE RESPUESTA**
 
-1. **Validación de Datos**: Todos los endpoints utilizan DTOs con validaciones usando `class-validator`
-2. **MongoDB ObjectIds**: Los IDs deben ser ObjectIds válidos de MongoDB
-3. **Uploads**: Los archivos se almacenan en la carpeta `./uploads` del servidor
-4. **PayPal Integration**: Los pagos están integrados con PayPal API
-5. **Paginación**: Los endpoints de listado soportan paginación con `limit` y `offset`
-6. **Timestamps**: Todos los modelos incluyen `createdAt` y `updatedAt` automáticamente
-7. **Índices**: La base de datos tiene índices optimizados para búsquedas frecuentes
-
----
-
-## 🚀 **EJEMPLOS DE USO**
-
-### Registro de Usuario
-```bash
-curl -X POST http://localhost:3000/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "usuario@ejemplo.com",
-    "password": "password123",
-    "name": "Usuario Ejemplo",
-    "street": "Calle 123",
-    "city": "Ciudad",
-    "zip": "12345",
-    "country": "País"
-  }'
+### **Respuesta de Éxito**
+```json
+{
+  "success": true,
+  "data": {...},
+  "message": "Operación exitosa"
+}
 ```
 
-### Obtener Productos
-```bash
-curl -X GET "http://localhost:3000/products?category=sandalias&minPrice=50"
+### **Respuesta de Error**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Datos de entrada inválidos",
+    "details": [
+      {
+        "field": "email",
+        "message": "El email es requerido"
+      }
+    ]
+  },
+  "timestamp": "2025-01-21T10:30:00Z"
+}
 ```
 
-### Agregar al Carrito
-```bash
-curl -X POST http://localhost:3000/cart/add \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "productId": "64a1b2c3d4e5f6789abcdef0",
-    "quantity": 2,
-    "size": "38"
-  }'
+### **Respuesta Paginada**
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 100,
+    "totalPages": 10,
+    "hasNext": true,
+    "hasPrev": false
+  }
+}
 ```
 
 ---
 
-## 👤 **ENDPOINTS DE PERFIL DE USUARIO** (`/profile`)
+## 🔒 **SEGURIDAD**
 
-### GET /profile
-**Descripción:** Obtener perfil completo del usuario (se crea automáticamente si no existe)
-- **Método:** `GET`
-- **URL:** `/profile`
-- **Autenticación:** Requerida
-- **Respuesta:** Objeto UserProfile completo
-
-### PUT /profile
-**Descripción:** Actualizar información del perfil
-- **Método:** `PUT`
-- **URL:** `/profile`
-- **Autenticación:** Requerida
-- **Body:** UpdateProfileDto (campos opcionales)
-
-### GET /profile/stats
-**Descripción:** Obtener estadísticas y completitud del perfil
-- **Método:** `GET`
-- **URL:** `/profile/stats`
-- **Autenticación:** Requerida
-
-### GET /profile/completion-guide
-**Descripción:** Obtener guía paso a paso para completar el perfil
-- **Método:** `GET`
-- **URL:** `/profile/completion-guide`
-- **Autenticación:** Requerida
-
-### POST /profile/verify/email
-**Descripción:** Verificar email del usuario
-- **Método:** `POST`
-- **URL:** `/profile/verify/email`
-- **Autenticación:** Requerida
-
-### POST /profile/verify/phone
-**Descripción:** Verificar teléfono del usuario
-- **Método:** `POST`
-- **URL:** `/profile/verify/phone`
-- **Autenticación:** Requerida
-
-### POST /profile/verify/identity
-**Descripción:** Verificar identidad del usuario
-- **Método:** `POST`
-- **URL:** `/profile/verify/identity`
-- **Autenticación:** Requerida
-
----
-
-## 🏠 **ENDPOINTS DE DIRECCIONES** (`/profile/addresses`)
-
-### GET /profile/addresses
-**Descripción:** Obtener todas las direcciones del usuario
-- **Método:** `GET`
-- **URL:** `/profile/addresses`
-- **Query Params:** `type` (opcional) - Filtrar por tipo de dirección
-- **Autenticación:** Requerida
-
-### GET /profile/addresses/:addressId
-**Descripción:** Obtener dirección específica
-- **Método:** `GET`
-- **URL:** `/profile/addresses/:addressId`
-- **Autenticación:** Requerida
-
-### POST /profile/addresses
-**Descripción:** Crear nueva dirección
-- **Método:** `POST`
-- **URL:** `/profile/addresses`
-- **Autenticación:** Requerida
-- **Body:** CreateAddressDto
-
-### PUT /profile/addresses/:addressId
-**Descripción:** Actualizar dirección existente
-- **Método:** `PUT`
-- **URL:** `/profile/addresses/:addressId`
-- **Autenticación:** Requerida
-- **Body:** UpdateAddressDto
-
-### DELETE /profile/addresses/:addressId
-**Descripción:** Eliminar dirección (soft delete)
-- **Método:** `DELETE`
-- **URL:** `/profile/addresses/:addressId`
-- **Autenticación:** Requerida
-
-### POST /profile/addresses/:addressId/set-default
-**Descripción:** Establecer dirección como predeterminada
-- **Método:** `POST`
-- **URL:** `/profile/addresses/:addressId/set-default`
-- **Autenticación:** Requerida
-
----
-
-## 🚚 **ENDPOINTS DRENVÍO** (`/profile`)
-
-### GET /profile/shipping-info
-**Descripción:** Obtener información completa para envíos (DrEnvío)
-- **Método:** `GET`
-- **URL:** `/profile/shipping-info`
-- **Autenticación:** Requerida
-
-### GET /profile/addresses/:addressId/drenvio-validation
-**Descripción:** Validar dirección con DrEnvío
-- **Método:** `GET`
-- **URL:** `/profile/addresses/:addressId/drenvio-validation`
-- **Autenticación:** Requerida
-
----
-
-## 🛍️ **ENDPOINTS MEJORADOS DE CARRITO**
-
-### GET /cart/validate
-**Descripción:** Validar carrito antes del checkout
-- **Método:** `GET`
-- **URL:** `/cart/validate`
-- **Autenticación:** Requerida
-
-### GET /cart/summary
-**Descripción:** Resumen completo del carrito con impuestos
-- **Método:** `GET`
-- **URL:** `/cart/summary`
-- **Autenticación:** Requerida
-
-### DELETE /cart/clear
-**Descripción:** Limpiar todo el carrito
-- **Método:** `DELETE`
-- **URL:** `/cart/clear`
-- **Autenticación:** Requerida
-
----
-
-## 💳 **ENDPOINTS MEJORADOS DE PAGOS**
-
-### POST /payments/partial-checkout
-**Descripción:** Crear pago parcial desde carrito
-- **Método:** `POST`
-- **URL:** `/payments/partial-checkout`
-- **Autenticación:** Requerida
-- **Body:** PartialCheckoutDto
-
-### GET /payments/paypal/success
-**Descripción:** Callback exitoso de PayPal (público)
-- **Método:** `GET`
-- **URL:** `/payments/paypal/success`
-- **Query Params:** `token`, `PayerID`
-- **Autenticación:** No requerida (`@Public()`)
-
-### GET /payments/paypal/cancel
-**Descripción:** Callback de cancelación de PayPal (público)
-- **Método:** `GET`
-- **URL:** `/payments/paypal/cancel`
-- **Query Params:** `token`
-- **Autenticación:** No requerida (`@Public()`)
-
----
-
-## 📦 **ENDPOINTS MEJORADOS DE ÓRDENES**
-
-### GET /orders/my-orders
-**Descripción:** Obtener historial de compras del usuario
-- **Método:** `GET`
-- **URL:** `/orders/my-orders`
-- **Query Params:** `limit`, `offset`
-- **Autenticación:** Requerida
-
-### GET /orders/my-orders/summary
-**Descripción:** Resumen de compras del usuario
-- **Método:** `GET`
-- **URL:** `/orders/my-orders/summary`
-- **Autenticación:** Requerida
-
-### GET /orders/my-orders/:id
-**Descripción:** Obtener orden específica del usuario
-- **Método:** `GET`
-- **URL:** `/orders/my-orders/:id`
-- **Autenticación:** Requerida
-
----
-
-## 📋 **EJEMPLOS DE USO ACTUALIZADOS**
-
-### Flujo Completo de Perfil
-```bash
-# 1. Obtener/crear perfil
-curl -X GET "https://9dbdcf7272a6.ngrok-free.app/profile" \
-  -H "Authorization: Bearer <token>"
-
-# 2. Completar información personal
-curl -X PUT "https://9dbdcf7272a6.ngrok-free.app/profile" \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "firstName": "Juan",
-    "lastName": "Pérez",
-    "phoneNumbers": [{
-      "countryCode": "+54",
-      "number": "1123456789",
-      "type": "mobile",
-      "isPrimary": true
-    }]
-  }'
-
-# 3. Crear dirección
-curl -X POST "https://9dbdcf7272a6.ngrok-free.app/profile/addresses" \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "type": "home",
-    "alias": "Casa",
-    "street": "Av. Corrientes 1234",
-    "city": "Buenos Aires",
-    "state": "CABA",
-    "postalCode": "1043",
-    "country": "Argentina"
-  }'
+### **Headers Requeridos**
+```
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
 ```
 
-### Flujo de Compra Mejorado
-```bash
-# 1. Validar carrito
-curl -X GET "https://9dbdcf7272a6.ngrok-free.app/cart/validate" \
-  -H "Authorization: Bearer <token>"
+### **Rate Limiting**
+- **Usuarios autenticados**: 1000 requests/hora
+- **Usuarios no autenticados**: 100 requests/hora
+- **Endpoints de admin**: 5000 requests/hora
 
-# 2. Compra parcial
-curl -X POST "https://9dbdcf7272a6.ngrok-free.app/payments/partial-checkout" \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "items": [{"itemId": "CART_ITEM_ID", "quantity": 1}]
-  }'
-
-# 3. Ver compras
-curl -X GET "https://9dbdcf7272a6.ngrok-free.app/orders/my-orders" \
-  -H "Authorization: Bearer <token>"
-```
+### **Validación de Datos**
+- Todos los inputs son validados usando class-validator
+- Sanitización automática de datos
+- Protección contra inyección SQL/NoSQL
 
 ---
 
-*Documentación generada automáticamente basada en el código fuente del backend Nabra XR1*
-*Última actualización: Sistema completo de perfil, direcciones y mejoras en carrito/pagos*
+## 📚 **DOCUMENTACIÓN ADICIONAL**
+
+- **Notificaciones**: `NOTIFICATIONS_SYSTEM_DOCUMENTATION.md`
+- **Promociones**: `PROMOTIONS_EXPANDED_DOCUMENTATION.md`
+- **DrEnvío**: `DRENVIO_INTEGRATION.md`
+- **PayPal**: `PAYMENT_API.md`
+- **Reseñas**: `REVIEWS_SYSTEM_DOCUMENTATION.md`
+
+---
+
+## 🚀 **PRÓXIMAS FUNCIONALIDADES**
+
+- **Sistema de Wishlist** - Lista de deseos
+- **Motor de Recomendaciones** - IA para sugerir productos
+- **Dashboard de Analytics** - Reportes avanzados
+- **A/B Testing** - Pruebas de promociones
+- **Gamificación** - Sistema de puntos y recompensas
+
+---
+
+**Última actualización**: 21 de Enero, 2025  
+**Versión de API**: v1.0.0  
+**Total de endpoints**: 100+ endpoints implementados
