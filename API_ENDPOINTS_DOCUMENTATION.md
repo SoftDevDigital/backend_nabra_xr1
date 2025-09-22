@@ -101,6 +101,282 @@ https://9dbdcf7272a6.ngrok-free.app
 
 ---
 
+## 🔐 **ENDPOINTS DE GOOGLE OAUTH** (`/auth/google`)
+
+### GET /auth/google
+**Descripción:** Iniciar autenticación con Google OAuth2
+- **Método:** `GET`
+- **URL:** `/auth/google`
+- **Autenticación:** No requerida (`@Public()`)
+- **Respuesta:** Redirección a Google OAuth
+
+### GET /auth/google/callback
+**Descripción:** Callback de Google OAuth2
+- **Método:** `GET`
+- **URL:** `/auth/google/callback`
+- **Autenticación:** No requerida (`@Public()`)
+- **Respuesta:** Redirección con token JWT
+
+### GET /auth/google/auth-url
+**Descripción:** Obtener URL de autenticación de Google
+- **Método:** `GET`
+- **URL:** `/auth/google/auth-url`
+- **Autenticación:** No requerida
+- **Query Parameters:**
+  - `state`: estado opcional para CSRF protection
+- **Respuesta:**
+  ```json
+  {
+    "authUrl": "https://accounts.google.com/o/oauth2/v2/auth?...",
+    "state": "default"
+  }
+  ```
+
+### GET /auth/google/profile
+**Descripción:** Obtener perfil del usuario Google autenticado
+- **Método:** `GET`
+- **URL:** `/auth/google/profile`
+- **Autenticación:** Requerida (Google OAuth)
+- **Respuesta:**
+  ```json
+  {
+    "_id": "string",
+    "googleId": "string",
+    "email": "string",
+    "name": "string",
+    "firstName": "string",
+    "lastName": "string",
+    "displayName": "string",
+    "avatarUrl": "string",
+    "isGoogleUser": true,
+    "linkedUserId": "string",
+    "access_token": "string",
+    "token_type": "Bearer",
+    "expires_in": 604800
+  }
+  ```
+
+### POST /auth/google/link
+**Descripción:** Vincular cuenta Google con usuario tradicional
+- **Método:** `POST`
+- **URL:** `/auth/google/link`
+- **Autenticación:** Requerida (Google OAuth)
+- **Body:**
+  ```json
+  {
+    "traditionalUserId": "string"
+  }
+  ```
+- **Respuesta:**
+  ```json
+  {
+    "message": "Successfully linked Google account to traditional user",
+    "linked": true,
+    "user": {
+      "_id": "string",
+      "googleId": "string",
+      "email": "string",
+      "name": "string",
+      "isGoogleUser": true,
+      "linkedUserId": "string"
+    }
+  }
+  ```
+
+### POST /auth/google/unlink
+**Descripción:** Desvincular cuenta Google de usuario tradicional
+- **Método:** `POST`
+- **URL:** `/auth/google/unlink`
+- **Autenticación:** Requerida (Google OAuth)
+- **Respuesta:**
+  ```json
+  {
+    "message": "Successfully unlinked Google account from traditional user",
+    "linked": false,
+    "user": {
+      "_id": "string",
+      "googleId": "string",
+      "email": "string",
+      "name": "string",
+      "isGoogleUser": true,
+      "linkedUserId": null
+    }
+  }
+  ```
+
+### POST /auth/google/preferences
+**Descripción:** Actualizar preferencias del usuario Google
+- **Método:** `POST`
+- **URL:** `/auth/google/preferences`
+- **Autenticación:** Requerida (Google OAuth)
+- **Body:**
+  ```json
+  {
+    "emailNotifications": true,
+    "marketingEmails": false,
+    "preferredLanguage": "es",
+    "timezone": "America/Argentina/Buenos_Aires"
+  }
+  ```
+- **Respuesta:**
+  ```json
+  {
+    "message": "Preferences updated successfully"
+  }
+  ```
+
+### POST /auth/google/logout
+**Descripción:** Cerrar sesión del usuario Google
+- **Método:** `POST`
+- **URL:** `/auth/google/logout`
+- **Autenticación:** Requerida (Google OAuth)
+- **Respuesta:**
+  ```json
+  {
+    "message": "Logged out successfully"
+  }
+  ```
+
+### GET /auth/google/profile/complete
+**Descripción:** Obtener perfil completo del usuario Google
+- **Método:** `GET`
+- **URL:** `/auth/google/profile/complete`
+- **Autenticación:** Requerida (Google OAuth)
+- **Respuesta:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "string",
+      "googleId": "string",
+      "email": "string",
+      "firstName": "string",
+      "lastName": "string",
+      "displayName": "string",
+      "avatarUrl": "string",
+      "phone": "string",
+      "alternativeEmail": "string",
+      "addresses": [
+        {
+          "_id": "string",
+          "type": "home",
+          "street": "string",
+          "city": "string",
+          "state": "string",
+          "zipCode": "string",
+          "country": "string",
+          "phone": "string",
+          "isDefault": true,
+          "createdAt": "2025-01-21T10:30:00Z"
+        }
+      ],
+      "preferredShippingMethod": "standard",
+      "allowWeekendDelivery": false,
+      "allowEveningDelivery": false,
+      "requiresInvoice": false,
+      "taxId": "string",
+      "companyName": "string",
+      "emailNotifications": true,
+      "orderNotifications": true,
+      "shippingNotifications": true,
+      "promotionNotifications": true,
+      "smsNotifications": false,
+      "allowDataProcessing": true,
+      "allowMarketingEmails": false,
+      "allowDataSharing": false,
+      "preferredLanguage": "es",
+      "locale": "es-AR",
+      "timezone": "America/Argentina/Buenos_Aires",
+      "isGoogleUser": true,
+      "linkedUserId": "string",
+      "createdAt": "2025-01-21T10:30:00Z",
+      "lastLoginAt": "2025-01-21T10:30:00Z"
+    }
+  }
+  ```
+
+### PUT /auth/google/profile
+**Descripción:** Actualizar perfil completo del usuario Google
+- **Método:** `PUT`
+- **URL:** `/auth/google/profile`
+- **Autenticación:** Requerida (Google OAuth)
+- **Body:**
+  ```json
+  {
+    "firstName": "string",
+    "lastName": "string",
+    "phone": "string",
+    "alternativeEmail": "string",
+    "preferredShippingMethod": "standard",
+    "allowWeekendDelivery": false,
+    "allowEveningDelivery": false,
+    "requiresInvoice": false,
+    "taxId": "string",
+    "companyName": "string",
+    "emailNotifications": true,
+    "orderNotifications": true,
+    "shippingNotifications": true,
+    "promotionNotifications": true,
+    "smsNotifications": false,
+    "allowDataProcessing": true,
+    "allowMarketingEmails": false,
+    "allowDataSharing": false,
+    "preferredLanguage": "es",
+    "timezone": "America/Argentina/Buenos_Aires"
+  }
+  ```
+
+### POST /auth/google/addresses
+**Descripción:** Agregar nueva dirección de envío
+- **Método:** `POST`
+- **URL:** `/auth/google/addresses`
+- **Autenticación:** Requerida (Google OAuth)
+- **Body:**
+  ```json
+  {
+    "type": "home",
+    "street": "Av. Corrientes 1234",
+    "city": "Buenos Aires",
+    "state": "CABA",
+    "zipCode": "1043",
+    "country": "Argentina",
+    "phone": "+54 11 1234-5678",
+    "isDefault": true
+  }
+  ```
+
+### PUT /auth/google/addresses/:addressId
+**Descripción:** Actualizar dirección de envío
+- **Método:** `PUT`
+- **URL:** `/auth/google/addresses/:addressId`
+- **Autenticación:** Requerida (Google OAuth)
+
+### DELETE /auth/google/addresses/:addressId
+**Descripción:** Eliminar dirección de envío
+- **Método:** `DELETE`
+- **URL:** `/auth/google/addresses/:addressId`
+- **Autenticación:** Requerida (Google OAuth)
+
+### GET /auth/google/stats
+**Descripción:** Obtener estadísticas de usuarios Google (desarrollo)
+- **Método:** `GET`
+- **URL:** `/auth/google/stats`
+- **Autenticación:** Requerida (Google OAuth)
+- **Respuesta:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "totalUsers": 150,
+      "activeUsers": 120,
+      "suspendedUsers": 5,
+      "averageLoginCount": 12.5
+    }
+  }
+  ```
+
+---
+
 ## 📦 **ENDPOINTS DE PRODUCTOS** (`/products`)
 
 ### GET /products
@@ -1241,4 +1517,4 @@ Content-Type: application/json
 
 **Última actualización**: 21 de Enero, 2025  
 **Versión de API**: v1.0.0  
-**Total de endpoints**: 100+ endpoints implementados
+**Total de endpoints**: 110+ endpoints implementados
