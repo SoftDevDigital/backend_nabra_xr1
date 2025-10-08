@@ -1,98 +1,159 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Nabra XR - E-commerce Backend API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## Overview
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Nabra XR is a comprehensive e-commerce backend API built with NestJS and TypeScript. The system provides a complete solution for online retail operations, including product management, user authentication, order processing, payment integration, shipping management, and administrative tools.
 
-## Description
+## Core Features
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+### Authentication & User Management
+- Traditional email/password registration and login
+- Google OAuth2 integration for social authentication
+- JWT-based authentication with role-based access control
+- User profile management with configurable personal data
+- Multiple shipping addresses per user
+- User preferences and notification settings
 
-## Project setup
+### Product & Inventory Management
+- Complete product catalog management
+- Category-based product organization
+- Product images and media handling
+- Stock tracking and inventory management
+- Product search and filtering capabilities
 
-```bash
-$ npm install
-```
+### Shopping Cart & Orders
+- Persistent shopping cart functionality
+- Real-time cart updates and synchronization
+- Order creation and management
+- Order status tracking and updates
+- Order history and user purchase records
 
-## Compile and run the project
+### Payment Processing
+- PayPal integration for secure payments
+- Payment verification and processing
+- Order confirmation and payment status tracking
+- Refund and cancellation support
 
-```bash
-# development
-$ npm run start
+### Shipping & Logistics
+- DrEnvío integration for shipping calculations
+- Multiple shipping options and rates
+- Real-time shipping cost calculation
+- Package tracking and delivery updates
+- Shipping address validation
 
-# watch mode
-$ npm run start:dev
+### Promotions & Discounts
+- Advanced promotion system with 22+ promotion types
+- Automatic discount application to cart items
+- Coupon code management and validation
+- Real-time promotion updates for existing cart items
+- Time-based and condition-based promotions
 
-# production mode
-$ npm run start:prod
-```
+### Reviews & Ratings
+- Product review and rating system
+- Verified purchase reviews
+- Review moderation and management
+- Photo attachments for reviews
+- Review helpfulness voting
 
-## Run tests
+### Notifications
+- Multi-channel notification system (Email, SMS, Push, In-app)
+- Customizable notification templates
+- User notification preferences
+- Automated notifications for order updates
+- Marketing and promotional notifications
 
-```bash
-# unit tests
-$ npm run test
+### Administrative Tools
+- Comprehensive admin dashboard
+- User management and moderation
+- Product and inventory management
+- Order processing and fulfillment
+- Promotion and discount management
+- System analytics and reporting
 
-# e2e tests
-$ npm run test:e2e
+## Technical Architecture
 
-# test coverage
-$ npm run test:cov
-```
+### Framework & Language
+- **NestJS**: Modern Node.js framework for building scalable server-side applications
+- **TypeScript**: Strong typing for enhanced code quality and maintainability
+- **MongoDB**: NoSQL database with Mongoose ODM for flexible data modeling
 
-## Deployment
+### Authentication & Security
+- **JWT**: JSON Web Tokens for stateless authentication
+- **Passport.js**: Authentication middleware with multiple strategies
+- **CORS**: Cross-origin resource sharing configuration
+- **Input validation**: Comprehensive request validation using class-validator
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+### External Integrations
+- **Google OAuth2**: Social authentication integration
+- **PayPal API**: Payment processing and transaction management
+- **DrEnvío API**: Shipping and logistics integration
+- **Email/SMS Services**: Notification delivery systems
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Data Management
+- **MongoDB**: Primary database for all application data
+- **Mongoose**: Object Document Mapping with schema validation
+- **File Upload**: Media handling for product images and user content
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+## System Capabilities
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Scalability
+- Modular architecture with clear separation of concerns
+- Microservice-ready design with independent modules
+- Efficient database queries with proper indexing
+- Configurable environment settings for different deployment stages
 
-## Resources
+### Security
+- Role-based access control (RBAC)
+- Input sanitization and validation
+- Secure password hashing
+- Protected API endpoints with authentication guards
+- Rate limiting and request throttling
 
-Check out a few resources that may come in handy when working with NestJS:
+### Performance
+- Optimized database queries
+- Efficient data serialization
+- Caching strategies for frequently accessed data
+- Pagination for large data sets
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Monitoring & Logging
+- Comprehensive error handling and logging
+- Request/response logging for debugging
+- Performance monitoring capabilities
+- Health check endpoints
 
-## Support
+## Business Logic
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### E-commerce Workflow
+1. **User Registration/Login**: Users can create accounts or authenticate via Google
+2. **Product Browsing**: Browse products with search, filtering, and categorization
+3. **Cart Management**: Add products to cart with real-time updates and promotion applications
+4. **Checkout Process**: Secure checkout with shipping calculation and payment processing
+5. **Order Fulfillment**: Order processing, shipping, and tracking
+6. **Post-Purchase**: Reviews, support, and repeat purchase facilitation
 
-## Stay in touch
+### Administrative Workflow
+1. **Product Management**: Add, update, and manage product catalog
+2. **Order Processing**: Monitor and fulfill customer orders
+3. **User Management**: Handle user accounts, roles, and permissions
+4. **Promotion Management**: Create and manage marketing campaigns
+5. **Analytics**: Track sales, user behavior, and system performance
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## API Design
 
-## License
+The API follows RESTful principles with clear resource-based URLs and appropriate HTTP methods. All endpoints return consistent JSON responses with proper HTTP status codes. The system includes comprehensive error handling with detailed error messages for debugging and user feedback.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Response Format
+All API responses follow a consistent structure with success/error indicators, data payloads, and metadata where applicable.
+
+### Data Validation
+Input validation is enforced at all endpoints using DTOs (Data Transfer Objects) with comprehensive validation rules to ensure data integrity and security.
+
+## Deployment Considerations
+
+The system is designed for easy deployment across different environments (development, staging, production) with environment-specific configurations. It supports both traditional server deployment and containerized deployment using Docker.
+
+### Environment Configuration
+All sensitive data and environment-specific settings are managed through environment variables, ensuring security and flexibility across different deployment scenarios.
+
+### Database Management
+The system includes database migration capabilities and seed data management for consistent deployment across environments.

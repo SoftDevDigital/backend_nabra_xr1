@@ -25,8 +25,5 @@ async function bootstrap() {
   // Puerto desde variables de entorno
   const port = configService.get('PORT') || 3001;
   await app.listen(port);
-  
-  console.log(`🚀 Servidor corriendo en puerto ${port}`);
-  console.log(`📖 Documentación API: http://localhost:${port}/api`);
 }
 bootstrap();

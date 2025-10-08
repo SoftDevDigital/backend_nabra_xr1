@@ -19,7 +19,7 @@ export class AuthService {
   ) {}
 
   async register(registerDto: RegisterDto): Promise<any> {
-    const { email, password, name, street, city, zip, country } = registerDto;
+    const { email, password, firstName, lastName } = registerDto;
     const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
       throw new BadRequestException('Email already exists');
@@ -29,14 +29,28 @@ export class AuthService {
     const user = new this.userModel({
       email,
       password: hashedPassword,
-      name,
-      address: street ? { street, city, zip, country } : undefined,
+      firstName,
+      lastName,
     });
     await user.save();
 
-    const payload = { sub: user._id, email: user.email, role: user.role };
+    const payload = { 
+      sub: user._id, 
+      email: user.email, 
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role 
+    };
+    
     return {
       access_token: this.jwtService.sign(payload),
+      user: {
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+      },
     };
   }
 
@@ -47,9 +61,23 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const payload = { sub: user._id, email: user.email, role: user.role };
+    const payload = { 
+      sub: user._id, 
+      email: user.email, 
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role 
+    };
+    
     return {
       access_token: this.jwtService.sign(payload),
+      user: {
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+      },
     };
   }
 }
