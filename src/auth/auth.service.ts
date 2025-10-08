@@ -3,18 +3,20 @@ import {
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { User } from './schemas/user.schema';
+import { GoogleUser } from './google/schemas/google-user.schema';
 import { RegisterDto } from './dtos/register.dto';
 import { LoginDto } from './dtos/login.dto';
+import { InjectModel } from '@nestjs/mongoose';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(GoogleUser.name) private googleUserModel: Model<GoogleUser>,
     private jwtService: JwtService,
   ) {}
 
@@ -23,6 +25,12 @@ export class AuthService {
     const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
       throw new BadRequestException('Email already exists');
+    }
+
+    // Evitar duplicado con Google users
+    const existingGoogleUser = await this.googleUserModel.findOne({ email });
+    if (existingGoogleUser) {
+      throw new BadRequestException('Email already exists (Google account)');
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);

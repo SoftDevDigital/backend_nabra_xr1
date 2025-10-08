@@ -1,0 +1,260 @@
+{
+  "info": {
+    "name": "Nabra XR1 - Google OAuth Testing",
+    "description": "Colección para probar el login con Google OAuth en el backend de Nabra XR1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Verificar Estado del Servidor",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/auth/google/auth-url",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "auth-url"]
+        },
+        "description": "Verifica que el servidor esté funcionando y obtiene la URL de autenticación de Google"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Obtener URL de Autenticación",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/auth/google/auth-url?state=test_state",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "auth-url"],
+          "query": [
+            {
+              "key": "state",
+              "value": "test_state",
+              "description": "Estado personalizado para el flujo OAuth"
+            }
+          ]
+        },
+        "description": "Obtiene la URL de Google OAuth con un estado personalizado"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Iniciar Login con Google (Redirección)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/auth/google",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google"]
+        },
+        "description": "Inicia el proceso de login con Google. Esta ruta redirige a Google OAuth"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Callback de Google OAuth (Simulado)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/auth/google/callback?code=test_code&state=test_state",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "callback"],
+          "query": [
+            {
+              "key": "code",
+              "value": "test_code",
+              "description": "Código de autorización simulado"
+            },
+            {
+              "key": "state",
+              "value": "test_state",
+              "description": "Estado del flujo OAuth"
+            }
+          ]
+        },
+        "description": "Simula el callback de Google OAuth con un código de prueba"
+      },
+      "response": []
+    },
+    {
+      "name": "5. Obtener Perfil de Usuario Google",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{google_token}}",
+            "description": "Token JWT del usuario autenticado con Google"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/auth/google/profile",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "profile"]
+        },
+        "description": "Obtiene el perfil del usuario autenticado con Google"
+      },
+      "response": []
+    },
+    {
+      "name": "6. Obtener Perfil Completo",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{google_token}}",
+            "description": "Token JWT del usuario autenticado con Google"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/auth/google/profile/complete",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "profile", "complete"]
+        },
+        "description": "Obtiene el perfil completo del usuario autenticado con Google"
+      },
+      "response": []
+    },
+    {
+      "name": "7. Actualizar Perfil",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{google_token}}",
+            "description": "Token JWT del usuario autenticado con Google"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"+1234567890\",\n  \"alternativeEmail\": \"alternative@example.com\",\n  \"preferredLanguage\": \"es\",\n  \"timezone\": \"America/Mexico_City\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/google/profile",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "profile"]
+        },
+        "description": "Actualiza el perfil del usuario autenticado con Google"
+      },
+      "response": []
+    },
+    {
+      "name": "8. Agregar Dirección",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{google_token}}",
+            "description": "Token JWT del usuario autenticado con Google"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"street\": \"Calle Principal 123\",\n  \"city\": \"Ciudad de México\",\n  \"state\": \"CDMX\",\n  \"postalCode\": \"01000\",\n  \"country\": \"México\",\n  \"isDefault\": true,\n  \"type\": \"home\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/google/addresses",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "addresses"]
+        },
+        "description": "Agrega una nueva dirección al usuario autenticado con Google"
+      },
+      "response": []
+    },
+    {
+      "name": "9. Actualizar Preferencias",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{google_token}}",
+            "description": "Token JWT del usuario autenticado con Google"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"emailNotifications\": true,\n  \"orderNotifications\": true,\n  \"shippingNotifications\": true,\n  \"promotionNotifications\": false,\n  \"allowMarketingEmails\": false,\n  \"preferredLanguage\": \"es\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/google/preferences",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "preferences"]
+        },
+        "description": "Actualiza las preferencias del usuario autenticado con Google"
+      },
+      "response": []
+    },
+    {
+      "name": "10. Logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{google_token}}",
+            "description": "Token JWT del usuario autenticado con Google"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/auth/google/logout",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "logout"]
+        },
+        "description": "Cierra la sesión del usuario autenticado con Google"
+      },
+      "response": []
+    },
+    {
+      "name": "11. Estadísticas (Solo para desarrollo)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{google_token}}",
+            "description": "Token JWT del usuario autenticado con Google"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/auth/google/stats",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "google", "stats"]
+        },
+        "description": "Obtiene estadísticas de usuarios Google (solo para desarrollo)"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001",
+      "description": "URL base del servidor backend"
+    },
+    {
+      "key": "google_token",
+      "value": "",
+      "description": "Token JWT obtenido después del login con Google"
+    }
+  ]
+}

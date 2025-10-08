@@ -83,10 +83,10 @@ export class PreferencesSettings {
   @Prop({ default: 'es' })
   language: string;
 
-  @Prop({ default: 'ARS' })
+  @Prop({ default: 'MXN' })
   currency: string;
 
-  @Prop({ default: 'America/Argentina/Buenos_Aires' })
+  @Prop({ default: 'America/Mexico_City' })
   timezone: string;
 
   @Prop({ default: true })

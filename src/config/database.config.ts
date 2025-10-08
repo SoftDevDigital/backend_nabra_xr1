@@ -5,7 +5,9 @@ export const databaseConfig = {
   useFactory: async (
     configService: ConfigService,
   ): Promise<MongooseModuleOptions> => {
-    const uri = await configService.get<string>('MONGO_URI');
+    const uri =
+      (await configService.get<string>('MONGO_URI')) ||
+      (await configService.get<string>('MONGODB_URI'));
     return {
       uri,
       // Opciones para escalabilidad

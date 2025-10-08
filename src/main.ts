@@ -1,14 +1,15 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as dotenv from 'dotenv';
-
-// Cargar variables de entorno antes de iniciar la aplicación
-dotenv.config();
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
   
   // Configuración global de validación
@@ -18,17 +19,48 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
   }));
 
+  // Servir archivos estáticos (imágenes)
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+    prefix: '/uploads/',
+  });
+
   // Configuración de CORS
   app.enableCors({
-    origin: ['http://localhost:3000', 'https://nabra.mx'],
-    credentials: true,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+    origin: configService.get('CORS_ORIGIN')?.split(',') || ['http://localhost:3000'],
+    credentials: configService.get('CORS_CREDENTIALS') === 'true',
+    methods: configService.get('CORS_METHODS')?.split(',') || ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: configService.get('CORS_ALLOWED_HEADERS')?.split(',') || ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  });
+
+  // Swagger / OpenAPI
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Nabra API')
+    .setDescription('Documentación detallada de la API de Nabra: endpoints, parámetros, respuestas y ejemplos para frontend')
+    .setVersion('1.0.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        in: 'header',
+        description: 'Introduce el token JWT con el prefijo Bearer',
+      },
+      'bearer',
+    )
+    .build();
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    },
+    customSiteTitle: 'Nabra API Docs',
   });
 
   // Puerto desde variables de entorno
-  const port = 3001;
+  const port = configService.get('PORT') || 3001;
   await app.listen(port);
-  console.log(`🚀 Backend corriendo en: ${port}`);
 }
 bootstrap();

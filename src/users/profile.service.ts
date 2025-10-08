@@ -8,10 +8,9 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { UserProfile } from './schemas/user-profile.schema';
-import { Address, AddressType } from './schemas/address.schema';
+import { Address } from './schemas/address.schema';
 import { UpdateProfileDto } from './dtos/update-profile.dto';
-import { CreateAddressDto } from './dtos/create-address.dto';
-import { UpdateAddressDto } from './dtos/update-address.dto';
+import { CreateAddressDto, UpdateAddressDto } from './dtos/address.dto';
 
 @Injectable()
 export class ProfileService {
@@ -116,7 +115,7 @@ export class ProfileService {
         userId,
       });
 
-      await address.save();
+      await (address as any).save();
       this.logger.log(`Address created for user: ${userId}`);
       return address;
     } catch (error) {
@@ -138,7 +137,7 @@ export class ProfileService {
       }
 
       Object.assign(address, updateAddressDto);
-      await address.save();
+      await (address as any).save();
 
       this.logger.log(`Address updated: ${addressId} for user: ${userId}`);
       return address;
@@ -163,7 +162,7 @@ export class ProfileService {
 
       // Soft delete
       address.isActive = false;
-      await address.save();
+      await (address as any).save();
 
       // Si era la dirección por defecto, asignar otra como por defecto
       if (address.isDefault) {
@@ -196,7 +195,7 @@ export class ProfileService {
 
       // Marcar la nueva como por defecto
       address.isDefault = true;
-      await address.save();
+      await (address as any).save();
 
       this.logger.log(`Default address set: ${addressId} for user: ${userId}`);
       return address;
@@ -209,7 +208,7 @@ export class ProfileService {
     }
   }
 
-  async getAddressesByType(userId: string, type: AddressType): Promise<Address[]> {
+  async getAddressesByType(userId: string, type: string): Promise<Address[]> {
     return this.addressModel.find({ userId, type, isActive: true }).exec();
   }
 
@@ -266,8 +265,8 @@ export class ProfileService {
       emergencyContacts: [],
       preferences: {
         language: 'es',
-        currency: 'ARS',
-        timezone: 'America/Argentina/Buenos_Aires',
+        currency: 'MXN',
+        timezone: 'America/Mexico_City',
         emailNotifications: true,
         smsNotifications: true,
         pushNotifications: true,

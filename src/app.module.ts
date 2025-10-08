@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CommonModule } from './common/common.module';
 import { databaseConfig } from './config/database.config';
+import zohoConfig from './config/zoho.config';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ProductsModule } from './products/products.module';
@@ -12,7 +13,7 @@ import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { ReviewsModule } from './reviews/reviews.module';
-import { PromotionsModule } from './promotions/promotions.module';
+import { SimplePromotionsModule } from './promotions/simple-promotions.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AdminSimpleModule } from './admin/admin-simple.module';
 
@@ -20,8 +21,7 @@ import { AdminSimpleModule } from './admin/admin-simple.module';
   imports: [
     ConfigModule.forRoot({ 
       isGlobal: true,
-      envFilePath: '.env',
-      ignoreEnvFile: false,
+      load: [zohoConfig]
     }),
     MongooseModule.forRootAsync(databaseConfig),
     CommonModule,
@@ -34,7 +34,7 @@ import { AdminSimpleModule } from './admin/admin-simple.module';
     PaymentsModule,
     ShippingModule,
     ReviewsModule,
-    PromotionsModule,
+    SimplePromotionsModule,
     NotificationsModule,
     AdminSimpleModule,
   ],

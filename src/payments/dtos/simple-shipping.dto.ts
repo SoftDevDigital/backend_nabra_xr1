@@ -1,116 +1,49 @@
-import { IsString, IsNotEmpty, IsNumber, ValidateNested, IsOptional } from 'class-validator';
+import { IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
-// Contact info
-class ContactDto {
+export class SimpleShippingContactDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  emailOrPhone: string;
+  emailOrPhone?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  firstName: string;
+  firstName?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  lastName: string;
+  lastName?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  phone: string;
+  phone?: string;
 }
 
-// Address info
-class AddressDto {
+export class SimpleShippingAddressDto {
   @IsString()
-  @IsNotEmpty()
   country: string;
 
   @IsString()
-  @IsNotEmpty()
   state: string;
 
   @IsString()
-  @IsNotEmpty()
   city: string;
 
   @IsString()
-  @IsNotEmpty()
   postalCode: string;
 
   @IsString()
-  @IsNotEmpty()
   addressLine: string;
 }
 
-// Simple Shipping
-class SimpleShippingDto {
+export class SimpleShippingDto {
   @ValidateNested()
-  @Type(() => ContactDto)
-  contact: ContactDto;
+  @Type(() => SimpleShippingContactDto)
+  contact: SimpleShippingContactDto;
 
   @ValidateNested()
-  @Type(() => AddressDto)
-  address: AddressDto;
+  @Type(() => SimpleShippingAddressDto)
+  address: SimpleShippingAddressDto;
 }
 
-// Shipping Option
-class ShippingOptionDto {
-  @IsString()
-  @IsOptional()
-  ObjectId?: string;
-
-  @IsString()
-  @IsOptional()
-  ShippingId?: string;
-
-  @IsString()
-  @IsNotEmpty()
-  carrier: string;
-
-  @IsString()
-  @IsNotEmpty()
-  service: string;
-
-  @IsString()
-  @IsOptional()
-  currency?: string;
-
-  @IsNumber()
-  @IsNotEmpty()
-  price: number;
-
-  @IsNumber()
-  @IsOptional()
-  insurance?: number;
-
-  @IsString()
-  @IsOptional()
-  service_id?: string;
-
-  @IsString()
-  @IsOptional()
-  days?: string;
-}
-
-// Main DTO (TODO ES OPCIONAL)
-export class MercadoPagoCheckoutDto {
-  @ValidateNested()
-  @Type(() => SimpleShippingDto)
-  @IsOptional()
-  simpleShipping?: SimpleShippingDto;
-
-  @ValidateNested()
-  @Type(() => ShippingOptionDto)
-  @IsOptional()
-  shippingOption?: ShippingOptionDto;
-
-  @IsString()
-  @IsOptional()
-  returnUrl?: string;
-
-  @IsString()
-  @IsOptional()
-  cancelUrl?: string;
-}
 

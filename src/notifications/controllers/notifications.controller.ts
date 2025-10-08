@@ -18,19 +18,24 @@ import { UpdateNotificationPreferenceDto } from '../dtos/notification-preference
 import { NotificationType, NotificationChannel, NotificationStatus } from '../schemas/notification.schema';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Notifications')
+@ApiBearerAuth('bearer')
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   // ===== CREAR NOTIFICACIONES (ADMIN) =====
 
+  @ApiOperation({ summary: 'Crear notificación (admin)', description: 'Crea una notificación dirigida a uno o varios usuarios.' })
   @Post()
   @Roles('admin')
   async createNotification(@Body() createDto: CreateNotificationDto) {
     return this.notificationsService.createNotification(createDto);
   }
 
+  @ApiOperation({ summary: 'Enviar notificaciones masivas (admin)', description: 'Envía notificaciones en lote a múltiples usuarios.' })
   @Post('bulk')
   @Roles('admin')
   async sendBulkNotification(@Body() createDto: SendBulkNotificationDto) {
@@ -42,6 +47,7 @@ export class NotificationsController {
     };
   }
 
+  @ApiOperation({ summary: 'Enviar por segmento (admin)', description: 'Envía notificaciones filtrando por segmento (tipo/canal).' })
   @Post('segment')
   @Roles('admin')
   async sendNotificationBySegment(@Body() createDto: SendNotificationBySegmentDto) {
@@ -55,6 +61,13 @@ export class NotificationsController {
 
   // ===== NOTIFICACIONES DEL USUARIO =====
 
+  @ApiOperation({ summary: 'Mis notificaciones', description: 'Listado de notificaciones del usuario autenticado con filtros y paginación.' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'type', required: false })
+  @ApiQuery({ name: 'channel', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'unreadOnly', required: false })
   @Get()
   async getUserNotifications(
     @Request() req,
@@ -81,12 +94,15 @@ export class NotificationsController {
     );
   }
 
+  @ApiOperation({ summary: 'Mis estadísticas', description: 'Estadísticas básicas de notificaciones del usuario.' })
   @Get('stats')
   async getUserNotificationStats(@Request() req) {
     const userId = req.user.userId;
     return this.notificationsService.getUserNotificationStats(userId);
   }
 
+  @ApiOperation({ summary: 'Marcar como leída', description: 'Marca una notificación como leída.' })
+  @ApiParam({ name: 'id', description: 'ID de la notificación' })
   @Put(':id/read')
   @HttpCode(HttpStatus.NO_CONTENT)
   async markAsRead(@Param('id') id: string, @Request() req) {
@@ -98,6 +114,7 @@ export class NotificationsController {
     }
   }
 
+  @ApiOperation({ summary: 'Marcar todas como leídas', description: 'Marca todas las notificaciones del usuario como leídas.' })
   @Put('read-all')
   @HttpCode(HttpStatus.OK)
   async markAllAsRead(@Request() req) {
@@ -111,12 +128,14 @@ export class NotificationsController {
 
   // ===== PREFERENCIAS DEL USUARIO =====
 
+  @ApiOperation({ summary: 'Mis preferencias', description: 'Obtiene preferencias de notificación del usuario.' })
   @Get('preferences')
   async getUserPreferences(@Request() req) {
     const userId = req.user.userId;
     return this.notificationsService.getUserPreferences(userId);
   }
 
+  @ApiOperation({ summary: 'Actualizar preferencias', description: 'Actualiza preferencias de notificación del usuario.' })
   @Put('preferences')
   async updateUserPreferences(
     @Request() req,
@@ -128,6 +147,7 @@ export class NotificationsController {
 
   // ===== ESTADÍSTICAS GENERALES (ADMIN) =====
 
+  @ApiOperation({ summary: 'Estadísticas generales (admin)', description: 'Estadísticas de notificaciones a nivel sistema.' })
   @Get('admin/stats')
   @Roles('admin')
   async getNotificationStats(
@@ -146,6 +166,8 @@ export class NotificationsController {
     return this.notificationsService.getNotificationStats(filters);
   }
 
+  @ApiOperation({ summary: 'Notificaciones de usuario (admin)', description: 'Listado de notificaciones de un usuario específico.' })
+  @ApiParam({ name: 'userId', description: 'ID del usuario' })
   @Get('admin/users/:userId/notifications')
   @Roles('admin')
   async getAdminUserNotifications(
@@ -166,12 +188,16 @@ export class NotificationsController {
     );
   }
 
+  @ApiOperation({ summary: 'Preferencias de usuario (admin)', description: 'Obtiene preferencias de un usuario específico.' })
+  @ApiParam({ name: 'userId', description: 'ID del usuario' })
   @Get('admin/users/:userId/preferences')
   @Roles('admin')
   async getAdminUserPreferences(@Param('userId') userId: string) {
     return this.notificationsService.getUserPreferences(userId);
   }
 
+  @ApiOperation({ summary: 'Actualizar preferencias (admin)', description: 'Actualiza preferencias de un usuario específico.' })
+  @ApiParam({ name: 'userId', description: 'ID del usuario' })
   @Put('admin/users/:userId/preferences')
   @Roles('admin')
   async updateAdminUserPreferences(
@@ -183,6 +209,7 @@ export class NotificationsController {
 
   // ===== ENDPOINTS PÚBLICOS =====
 
+  @ApiOperation({ summary: 'Webhook de delivery', description: 'Webhook de proveedor para eventos de entrega (frontend no lo usa).' })
   @Post('webhook/delivery')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -192,6 +219,7 @@ export class NotificationsController {
     return { success: true };
   }
 
+  @ApiOperation({ summary: 'Webhook de apertura', description: 'Webhook de proveedor para eventos de apertura (frontend no lo usa).' })
   @Post('webhook/opened')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -201,6 +229,7 @@ export class NotificationsController {
     return { success: true };
   }
 
+  @ApiOperation({ summary: 'Webhook de clic', description: 'Webhook de proveedor para eventos de clic (frontend no lo usa).' })
   @Post('webhook/clicked')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -210,6 +239,8 @@ export class NotificationsController {
     return { success: true };
   }
 
+  @ApiOperation({ summary: 'Darse de baja', description: 'Endpoint público para desuscripción con token.' })
+  @ApiParam({ name: 'token', description: 'Token de desuscripción' })
   @Post('unsubscribe/:token')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -219,49 +250,5 @@ export class NotificationsController {
     return { success: true, message: 'Successfully unsubscribed' };
   }
 
-  // ===== ENDPOINTS DE DESARROLLO/TESTING =====
-
-  @Post('test/send')
-  @Roles('admin')
-  async testSendNotification(
-    @Body() body: {
-      userId: string;
-      type: NotificationType;
-      channel: NotificationChannel;
-      title: string;
-      content: string;
-    },
-  ) {
-    const notification = await this.notificationsService.createNotification(body);
-    return {
-      success: true,
-      notification,
-    };
-  }
-
-  @Post('test/template')
-  @Roles('admin')
-  async testTemplateNotification(
-    @Body() body: {
-      userId: string;
-      templateId: string;
-      channel: NotificationChannel;
-      templateData: Record<string, any>;
-    },
-  ) {
-    const notification = await this.notificationsService.createNotification({
-      userId: body.userId,
-      type: NotificationType.WELCOME, // Default type for testing
-      channel: body.channel,
-      title: 'Test Notification',
-      content: 'This is a test notification',
-      templateId: body.templateId,
-      templateData: body.templateData,
-    });
-
-    return {
-      success: true,
-      notification,
-    };
-  }
+  // ===== ENDPOINTS DE DESARROLLO/TESTING ===== (eliminados)
 }

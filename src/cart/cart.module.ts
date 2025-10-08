@@ -6,6 +6,7 @@ import { Cart, CartSchema } from './schemas/cart.schema';
 import { PaymentsModule } from '../payments/payments.module';
 import { ProductsModule } from '../products/products.module';
 import { PromotionsModule } from '../promotions/promotions.module';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { PromotionsModule } from '../promotions/promotions.module';
     forwardRef(() => PaymentsModule),
     ProductsModule,
     forwardRef(() => PromotionsModule),
+    HttpModule,
   ],
   controllers: [CartController],
   providers: [CartService],

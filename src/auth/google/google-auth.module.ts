@@ -12,6 +12,7 @@ import { GoogleAuthGuard } from './guards/google-auth.guard';
 
 // Importar esquemas
 import { GoogleUser, GoogleUserSchema } from './schemas/google-user.schema';
+import { User, UserSchema } from '../schemas/user.schema';
 
 // Importar configuración
 import { googleAuthConfig } from './google-auth.config';
@@ -37,9 +38,10 @@ import { googleAuthConfig } from './google-auth.config';
       },
     }),
     
-    // MongoDB para Google Users
+    // MongoDB para Google Users y User tradicional (para validaciones cruzadas)
     MongooseModule.forFeature([
       { name: GoogleUser.name, schema: GoogleUserSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [GoogleAuthController],

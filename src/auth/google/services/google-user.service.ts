@@ -1,9 +1,11 @@
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { GoogleUser, GoogleUserDocument } from '../schemas/google-user.schema';
 import { CreateGoogleUserDto } from '../dtos/create-google-user.dto';
 import { UpdateGoogleUserDto } from '../dtos/update-google-user.dto';
+import { User } from '../../schemas/user.schema';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class GoogleUserService {
@@ -11,6 +13,7 @@ export class GoogleUserService {
 
   constructor(
     @InjectModel(GoogleUser.name) private googleUserModel: Model<GoogleUserDocument>,
+    @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
   // ===== CREACIÓN Y GESTIÓN DE USUARIOS =====
@@ -19,22 +22,26 @@ export class GoogleUserService {
     try {
       this.logger.log(`Creating Google user with email: ${createDto.email}`);
 
-      // Verificar si ya existe un usuario con el mismo Google ID
-      const existingUser = await this.googleUserModel.findOne({
+      // Verificar si ya existe un GoogleUser con mismo googleId o email
+      const existingGoogleUser = await this.googleUserModel.findOne({
         $or: [
           { googleId: createDto.googleId },
           { email: createDto.email }
         ]
       });
 
-      if (existingUser) {
-        if (existingUser.googleId === createDto.googleId) {
+      if (existingGoogleUser) {
+        if (existingGoogleUser.googleId === createDto.googleId) {
           throw new ConflictException('User with this Google ID already exists');
         }
-        if (existingUser.email === createDto.email) {
+        if (existingGoogleUser.email === createDto.email) {
           throw new ConflictException('User with this email already exists');
         }
       }
+
+      // Si existe un usuario tradicional con el mismo email, se permitirá la creación
+      // del GoogleUser pero se marcará la vinculación (linkedUserId) desde la estrategia
+      // para mantener una sola identidad de negocio.
 
       const googleUser = new this.googleUserModel({
         ...createDto,
@@ -370,6 +377,50 @@ export class GoogleUserService {
       return unlinkedUser;
     } catch (error) {
       this.logger.error(`Error unlinking Google user: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  // ===== INTEGRACIÓN: CREAR O VINCULAR USER TRADICIONAL DESDE GOOGLE =====
+
+  async getOrCreateTraditionalUserFromGoogle(params: {
+    email: string;
+    firstName?: string;
+    lastName?: string;
+  }): Promise<User> {
+    try {
+      const { email, firstName, lastName } = params;
+      let user = await this.userModel.findOne({ email });
+      if (user) return user;
+
+      // Crear usuario tradicional con password aleatorio y datos básicos
+      const randomPassword = Math.random().toString(36).slice(-12) + Date.now();
+      const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+      user = new this.userModel({
+        email,
+        password: hashedPassword,
+        firstName: firstName || 'Google',
+        lastName: lastName || 'User',
+      });
+      await user.save();
+      return user;
+    } catch (error) {
+      this.logger.error(`Error creating traditional user from Google: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to create traditional user from Google');
+    }
+  }
+
+  async ensureGoogleLinkedToTraditional(googleUserId: string, userId: string): Promise<void> {
+    try {
+      const googleUser = await this.googleUserModel.findById(googleUserId);
+      if (!googleUser) throw new NotFoundException('Google user not found');
+      if (!googleUser.linkedUserId || String(googleUser.linkedUserId) !== String(userId)) {
+        googleUser.linkedUserId = (userId as any);
+        await googleUser.save();
+      }
+    } catch (error) {
+      this.logger.error(`Error linking Google user to traditional user: ${error.message}`, error.stack);
       throw error;
     }
   }

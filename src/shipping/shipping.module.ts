@@ -6,12 +6,16 @@ import { ScheduleModule } from '@nestjs/schedule';
 
 // Schemas
 import { Shipment, ShipmentSchema } from './schemas/shipment.schema';
+import { PendingShipment, PendingShipmentSchema } from './schemas/pending-shipment.schema';
 
 // Services
 import { DrEnvioService } from './drenvio.service';
+import { DrEnvioRealService } from './drenvio-real.service';
 import { ShippingCalculatorService } from './shipping-calculator.service';
 import { TrackingService } from './tracking.service';
 import { ShipmentService } from './shipment.service';
+import { ShipmentProcessorService } from './services/shipment-processor.service';
+import { ShipmentProcessorTask } from './tasks/shipment-processor.task';
 
 // Controllers
 import { ShippingController } from './shipping.controller';
@@ -29,6 +33,7 @@ import { OrdersModule } from '../orders/orders.module';
     ScheduleModule.forRoot(),
     MongooseModule.forFeature([
       { name: Shipment.name, schema: ShipmentSchema },
+      { name: PendingShipment.name, schema: PendingShipmentSchema },
     ]),
     forwardRef(() => UsersModule),
     forwardRef(() => ProductsModule),
@@ -38,15 +43,20 @@ import { OrdersModule } from '../orders/orders.module';
   controllers: [ShippingController],
   providers: [
     DrEnvioService,
+    DrEnvioRealService,
     ShippingCalculatorService,
     TrackingService,
     ShipmentService,
+    ShipmentProcessorService,
+    ShipmentProcessorTask,
   ],
   exports: [
     DrEnvioService,
+    DrEnvioRealService,
     ShippingCalculatorService,
     TrackingService,
     ShipmentService,
+    ShipmentProcessorService,
   ],
 })
 export class ShippingModule {}

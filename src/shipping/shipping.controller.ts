@@ -12,15 +12,22 @@ import {
   HttpStatus,
   BadRequestException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { ShippingCalculatorService } from './shipping-calculator.service';
 import { TrackingService } from './tracking.service';
 import { DrEnvioService } from './drenvio.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ShippingDataCaptureDto, ShippingCalculationResponseDto, CreateShipmentDto } from './dtos/shipping-data.dto';
 
+@ApiTags('Shipping')
+@ApiBearerAuth('bearer')
 @Controller('shipping')
 export class ShippingController {
+  private readonly logger = new Logger(ShippingController.name);
+
   constructor(
     private shippingCalculatorService: ShippingCalculatorService,
     private trackingService: TrackingService,
@@ -29,6 +36,8 @@ export class ShippingController {
 
   // ===== CÁLCULO DE ENVÍOS =====
 
+  @ApiOperation({ summary: 'Calcular envío (manual)', description: 'Calcula tarifas de envío a partir de items y dirección.' })
+  @ApiBody({ schema: { type: 'object' } })
   @Post('calculate')
   async calculateShipping(@Request() req, @Body() calculateRequest: any) {
     return this.shippingCalculatorService.calculateShipping({
@@ -39,6 +48,21 @@ export class ShippingController {
     });
   }
 
+  @ApiOperation({ summary: 'Capturar datos de envío y calcular total', description: 'Captura información de envío y calcula precio total (carrito + envío).' })
+  @ApiBody({ type: ShippingDataCaptureDto })
+  @Post('capture-and-calculate')
+  async captureShippingDataAndCalculate(
+    @Request() req,
+    @Body() shippingData: ShippingDataCaptureDto,
+  ): Promise<ShippingCalculationResponseDto> {
+    return this.shippingCalculatorService.captureShippingDataAndCalculate(
+      req.user.userId,
+      shippingData,
+    );
+  }
+
+  @ApiOperation({ summary: 'Calcular envío desde carrito', description: 'Calcula tarifas usando los items del carrito.' })
+  @ApiQuery({ name: 'addressId', required: false })
   @Post('calculate/cart')
   async calculateShippingFromCart(
     @Request() req,
@@ -50,6 +74,8 @@ export class ShippingController {
     );
   }
 
+  @ApiOperation({ summary: 'Obtener zona por CP', description: 'Mapea un código postal a zona, tarifas base y servicios disponibles.' })
+  @ApiParam({ name: 'postalCode', description: 'Código postal' })
   @Get('zones/:postalCode')
   async getZoneInfo(@Param('postalCode') postalCode: string) {
     // Lógica para obtener información de zona basada en código postal
@@ -69,11 +95,15 @@ export class ShippingController {
   // ===== TRACKING PÚBLICO =====
 
   @Public()
+  @ApiOperation({ summary: 'Tracking público', description: 'Consulta el tracking por número de seguimiento.' })
+  @ApiParam({ name: 'trackingNumber', description: 'Código de seguimiento' })
   @Get('track/:trackingNumber')
   async trackShipment(@Param('trackingNumber') trackingNumber: string) {
     return this.trackingService.getTrackingInfo(trackingNumber);
   }
 
+  @ApiOperation({ summary: 'Tracking por orden', description: 'Consulta el tracking asociado a una orden del usuario.' })
+  @ApiParam({ name: 'orderId', description: 'ID de la orden' })
   @Get('track/order/:orderId')
   async trackShipmentByOrder(@Request() req, @Param('orderId') orderId: string) {
     const trackingInfo = await this.trackingService.getTrackingInfoByOrderId(
@@ -88,6 +118,9 @@ export class ShippingController {
     return trackingInfo;
   }
 
+  @ApiOperation({ summary: 'Mis envíos', description: 'Listado de envíos del usuario con paginación.' })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'offset', required: false })
   @Get('my-shipments')
   async getUserShipments(
     @Request() req,
@@ -106,11 +139,16 @@ export class ShippingController {
 
   // ===== VALIDACIÓN DE DIRECCIONES =====
 
+  @ApiOperation({ summary: 'Validar dirección', description: 'Valida un objeto de dirección contra el proveedor de envíos.' })
+  @ApiBody({ schema: { type: 'object' } })
   @Post('validate-address')
   async validateAddress(@Body() address: any) {
     return this.drenvioService.validateAddress(address);
   }
 
+  @ApiOperation({ summary: 'Estimación de entrega', description: 'Calcula una fecha estimada de entrega por servicio y zona.' })
+  @ApiQuery({ name: 'service', required: true })
+  @ApiQuery({ name: 'zone', required: true })
   @Get('delivery-estimate')
   async getDeliveryEstimate(
     @Query('service') service: string,
@@ -134,6 +172,8 @@ export class ShippingController {
 
   // ===== INFORMACIÓN DE SERVICIOS =====
 
+  @ApiOperation({ summary: 'Servicios disponibles', description: 'Lista de servicios de envío y sus características.' })
+  @ApiQuery({ name: 'zone', required: false })
   @Get('services')
   async getAvailableShippingServices(@Query('zone') zone?: string) {
     const services = [
@@ -173,6 +213,7 @@ export class ShippingController {
     return services;
   }
 
+  @ApiOperation({ summary: 'Cobertura', description: 'Zonas de cobertura, rangos de CP y tiempos estimados.' })
   @Get('coverage')
   async getCoverageInfo() {
     return {
@@ -205,6 +246,9 @@ export class ShippingController {
   // ===== ENDPOINTS ADMINISTRATIVOS =====
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Estadísticas de envíos (admin)', description: 'Métricas de envíos en un rango de fechas.' })
+  @ApiQuery({ name: 'dateFrom', required: false })
+  @ApiQuery({ name: 'dateTo', required: false })
   @Get('admin/statistics')
   async getShipmentStatistics(
     @Query('dateFrom') dateFrom?: string,
@@ -217,6 +261,9 @@ export class ShippingController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Performance de entregas (admin)', description: 'Indicadores de performance en rango de fechas.' })
+  @ApiQuery({ name: 'dateFrom', required: false })
+  @ApiQuery({ name: 'dateTo', required: false })
   @Get('admin/performance')
   async getDeliveryPerformance(
     @Query('dateFrom') dateFrom?: string,
@@ -229,6 +276,7 @@ export class ShippingController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Forzar actualización de tracking (admin)', description: 'Dispara actualización de todos los envíos activos.' })
   @Post('admin/update-tracking')
   @HttpCode(HttpStatus.OK)
   async forceTrackingUpdate() {
@@ -236,14 +284,71 @@ export class ShippingController {
     return { message: 'Tracking update initiated' };
   }
 
+  // ===== ESTADO DEL SERVICIO =====
+
+  @ApiOperation({ summary: 'Estado del servicio DrEnvío', description: 'Verifica el estado del servicio DrEnvío y circuit breaker.' })
+  @Get('status')
+  async getServiceStatus() {
+    return this.drenvioService.getServiceStatus();
+  }
+
+  // ===== PRUEBA HARDCODEADA DE DRENVÍO =====
+
+  @Public()
+  @ApiOperation({ summary: 'Prueba hardcodeada de DrEnvío', description: 'Prueba la API de DrEnvío con datos reales hardcodeados.' })
+  @Post('test-drenvio-hardcoded')
+  async testDrenvioHardcoded() {
+    return this.drenvioService.testHardcodedShipment();
+  }
+
+  // ===== GENERACIÓN DE ENVÍOS =====
+
+  @Public()
+  @ApiOperation({ summary: 'Generar envío con DrEnvío', description: 'Genera envío con DrEnvío después del pago exitoso.' })
+  @ApiBody({ type: CreateShipmentDto })
+  @Post('generate-shipment')
+  async generateShipment(
+    @Request() req,
+    @Body() createShipmentDto: CreateShipmentDto,
+  ) {
+    // Validar que el orderId sea un ObjectId válido
+    if (!createShipmentDto.orderId || createShipmentDto.orderId.length !== 24) {
+      throw new BadRequestException('Invalid order ID format');
+    }
+
+    // Validar que shippingData esté presente
+    if (!createShipmentDto.shippingData) {
+      throw new BadRequestException('Shipping data is required');
+    }
+
+    // Validar campos críticos de shippingData
+    const { shippingData } = createShipmentDto;
+    if (!shippingData.origin || !shippingData.destination || !shippingData.shipment || !shippingData.packages) {
+      throw new BadRequestException('Missing required shipping data fields');
+    }
+
+    if (!shippingData.packages.length) {
+      throw new BadRequestException('At least one package is required');
+    }
+
+    // userId opcional ya que la ruta es pública
+    const userId = req.user?.userId || null;
+
+    return this.drenvioService.generateShipmentWithDrEnvio(
+      userId,
+      createShipmentDto,
+    );
+  }
+
   // ===== WEBHOOKS DRENVÍO =====
 
   @Public()
+  @ApiOperation({ summary: 'Webhook: actualización de estado', description: 'Webhook de DrEnvío para cambios de estado.' })
   @Post('webhooks/status-update')
   @HttpCode(HttpStatus.OK)
   async handleStatusUpdate(@Body() webhookData: any) {
     // TODO: Validar webhook signature
-    console.log('DrEnvío webhook received:', webhookData);
+    this.logger.debug('DrEnvío webhook received:', webhookData);
     
     // Procesar actualización de estado
     // Este endpoint será llamado por DrEnvío cuando cambie el estado del envío
@@ -252,18 +357,20 @@ export class ShippingController {
   }
 
   @Public()
+  @ApiOperation({ summary: 'Webhook: entregado', description: 'Notificación cuando un envío fue entregado.' })
   @Post('webhooks/delivered')
   @HttpCode(HttpStatus.OK)
   async handleDelivered(@Body() webhookData: any) {
-    console.log('DrEnvío delivery webhook received:', webhookData);
+    this.logger.debug('DrEnvío delivery webhook received:', webhookData);
     return { status: 'received' };
   }
 
   @Public()
+  @ApiOperation({ summary: 'Webhook: excepción', description: 'Notificación cuando un envío presenta una excepción.' })
   @Post('webhooks/exception')
   @HttpCode(HttpStatus.OK)
   async handleException(@Body() webhookData: any) {
-    console.log('DrEnvío exception webhook received:', webhookData);
+    this.logger.debug('DrEnvío exception webhook received:', webhookData);
     return { status: 'received' };
   }
 

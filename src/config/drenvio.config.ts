@@ -1,24 +1,24 @@
 export const drenvioConfig = {
   // Configuración de API
-  apiUrl: process.env.DRENVIO_API_URL || 'https://api.drenvio.com.ar/v1',
-  apiKey: process.env.DRENVIO_API_KEY || '',
+  apiUrl: process.env.DRENVIO_API_URL || 'https://prod.api-drenvio.com',
+  apiKey: process.env.DRENVIO_API_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYXV0aDB8NjMzZjk3NWM1MDMzYmZhY2E5YjZhNzJkIiwibmFtZSI6ImJlcmVuaWNlIG5hcmNpem8iLCJlbWFpbCI6Im5hYnJhd29tYW5zbXhAZ21haWwuY29tIiwiaWF0IjoxNzU4NjU1MTcxfQ.qUUCFXx5Cd-u56SEpGvmv9ZY0EipO0C7HdU4UjdSAoA',
   secretKey: process.env.DRENVIO_SECRET_KEY || '',
-  environment: process.env.DRENVIO_ENVIRONMENT || 'sandbox', // 'sandbox' o 'production'
+  environment: process.env.DRENVIO_ENVIRONMENT || 'production', // 'sandbox' o 'production'
   
   // Configuración de empresa
   companyInfo: {
-    name: 'Nabra XR',
-    cuit: process.env.COMPANY_CUIT || '20-12345678-9',
+    name: 'Nabra',
+    rfc: process.env.COMPANY_RFC || 'NABX123456XXX',
     address: {
-      street: 'Av. Corrientes 1234',
-      city: 'Buenos Aires',
-      state: 'CABA',
-      postalCode: '1043',
-      country: 'Argentina',
+      street: 'Callejón 6 de Mayo 150',
+      city: 'Tlajomulco de Zúñiga',
+      state: 'JAL',
+      postalCode: '45646',
+      country: 'México',
     },
     contact: {
-      phone: '+54 11 1234-5678',
-      email: 'envios@nabraxr.com',
+      phone: '+52 55 1234-5678',
+      email: 'contact@nabraxr.com',
     },
   },
 
@@ -41,34 +41,34 @@ export const drenvioConfig = {
     sameDay: {
       id: 'same_day',
       name: 'Envío Mismo Día',
-      description: 'Entrega el mismo día (solo CABA)',
+      description: 'Entrega el mismo día (solo ZMG)',
       maxWeight: 10, // kg
       maxDimensions: { length: 50, width: 50, height: 50 }, // cm
-      availableZones: ['CABA'],
+      availableZones: ['GDL'],
     },
   },
 
   // Configuración de zonas
   deliveryZones: {
-    caba: {
-      id: 'CABA',
-      name: 'Ciudad Autónoma de Buenos Aires',
-      baseRate: 1500,
-      freeShippingThreshold: 15000,
+    jalisco: {
+      id: 'JAL',
+      name: 'Jalisco',
+      baseRate: 120,
+      freeShippingThreshold: 1200,
       estimatedDelivery: '1-2 días hábiles',
     },
-    gba: {
-      id: 'GBA',
-      name: 'Gran Buenos Aires',
-      baseRate: 2500,
-      freeShippingThreshold: 20000,
-      estimatedDelivery: '2-3 días hábiles',
+    gdl: {
+      id: 'GDL',
+      name: 'Zona Metropolitana de Guadalajara',
+      baseRate: 150,
+      freeShippingThreshold: 1500,
+      estimatedDelivery: '1-2 días hábiles',
     },
     interior: {
       id: 'INTERIOR',
-      name: 'Interior del País',
-      baseRate: 3500,
-      freeShippingThreshold: 25000,
+      name: 'Interior de la República',
+      baseRate: 300,
+      freeShippingThreshold: 2000,
       estimatedDelivery: '3-7 días hábiles',
     },
   },
@@ -87,7 +87,7 @@ export const drenvioConfig = {
   // Límites y configuraciones
   limits: {
     maxPackageWeight: 50, // kg
-    maxPackageValue: 500000, // ARS
+    maxPackageValue: 50000, // MXN
     maxDimension: 150, // cm
     minDimension: 1, // cm
   },

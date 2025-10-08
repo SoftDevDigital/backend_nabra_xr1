@@ -1,10 +1,13 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
+
 export const googleAuthConfig = {
   // Configuración de Google OAuth2
   clientId: process.env.GOOGLE_CLIENT_ID || '',
   clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-   
-  // URL de callback - Configurar según variable de entorno
-  callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'https://api.nabra.mx/auth/google/callback',
+  
+  // URLs de callback
+  callbackUrl: process.env.GOOGLE_CALLBACK_URL || `${process.env.BASE_URL || 'http://localhost:3001'}/auth/google/callback`,
   
   // Scope de permisos solicitados
   scope: ['profile', 'email'],
@@ -16,9 +19,9 @@ export const googleAuthConfig = {
   jwtSecret: process.env.JWT_SECRET || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   
-  // Configuración de redirección después del login - HARDCODED
-  successRedirect: 'https://nabra.mx/',
-  failureRedirect: 'https://nabra.mx/login?error=auth_failed',
+  // Configuración de redirección después del login
+  successRedirect: process.env.GOOGLE_SUCCESS_REDIRECT || 'http://localhost:3000/',
+  failureRedirect: process.env.GOOGLE_FAILURE_REDIRECT || 'http://localhost:3000/login?error=auth_failed',
   
   // Configuración de seguridad
   security: {
@@ -31,7 +34,9 @@ export const googleAuthConfig = {
     cookieSameSite: 'lax' as const,
     
     // Configuración de CORS
-    allowedOrigins: ['https://api.nabra.mx'],
+    allowedOrigins: process.env.NODE_ENV === 'production' 
+      ? ['https://yourdomain.com'] 
+      : ['http://localhost:3000', 'http://localhost:3001'],
   },
   
   // Configuración de validación

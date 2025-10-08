@@ -506,7 +506,7 @@ export class NotificationsService {
       allowTransactional: true,
       allowSystem: true,
       language: 'es',
-      timezone: 'America/Argentina/Buenos_Aires',
+      timezone: 'America/Mexico_City',
     });
 
     return defaultPreferences.save();

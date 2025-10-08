@@ -84,7 +84,7 @@ export class ShipmentItem {
   quantity: number;
 
   @Prop({ required: true })
-  value: number; // ARS
+  value: number; // MXN
 
   @Prop()
   sku?: string;
@@ -156,13 +156,13 @@ export class Shipment extends Document {
 
   // Costos
   @Prop({ required: true })
-  shippingCost: number; // ARS
+  shippingCost: number; // MXN
 
   @Prop()
-  insuranceCost?: number; // ARS
+  insuranceCost?: number; // MXN
 
   @Prop({ required: true })
-  totalValue: number; // ARS del contenido
+  totalValue: number; // MXN del contenido
 
   // Fechas
   @Prop()

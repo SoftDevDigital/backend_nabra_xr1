@@ -9,165 +9,91 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Payment, PaymentDocument, PaymentStatus, PaymentProvider } from './schemas/payment.schema';
-import { PayPalService } from './paypal.service';
-import { MercadoPagoService } from './mercadopago.service';
 import { CreatePaymentDto } from './dtos/create-payment.dto';
 import { PaymentResponseDto } from './dtos/payment-response.dto';
 import { PartialCheckoutDto } from './dtos/partial-checkout.dto';
-import { CartCheckoutDto } from './dtos/cart-checkout.dto';
-import { MercadoPagoCheckoutDto } from './dtos/simple-shipping.dto';
+import { PaymentWithShippingDto } from './dtos/payment-with-shipping.dto';
+import { CheckoutWithShippingDto } from './dtos/checkout-with-shipping.dto';
 import { CartService } from '../cart/cart.service';
 import { ProductsService } from '../products/products.service';
 import { OrdersService } from '../orders/orders.service';
+import { MercadoPagoService } from './mercadopago.service';
+import { UsersService } from '../users/users.service';
+import { DrEnvioService } from '../shipping/drenvio.service';
 
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
+  
+  // Caché temporal para datos de envío (en memoria)
+  private shippingDataCache = new Map<string, any>();
 
   constructor(
     @InjectModel(Payment.name) private paymentModel: Model<PaymentDocument>,
-    private paypalService: PayPalService,
-    private mercadoPagoService: MercadoPagoService,
+    private mpService: MercadoPagoService,
     @Inject(forwardRef(() => CartService)) private cartService: CartService,
     private productsService: ProductsService,
     @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService,
+    private usersService: UsersService,
+    private drenvioService: DrEnvioService,
   ) {}
 
-  async createPayment(userId: string, createPaymentDto: CreatePaymentDto): Promise<PaymentResponseDto> {
+  private async getUserInfo(userId: string): Promise<{ email: string; firstName: string; lastName: string }> {
     try {
-      // Crear el pago en PayPal
-      const paypalResponse = await this.paypalService.createPayment(createPaymentDto);
+      const user = await this.usersService.getProfile(userId);
+      
+      // Validar que el email existe y es válido
+      if (!user.email || !user.email.includes('@')) {
+        throw new Error('Invalid or missing email address');
+      }
+      
+      return {
+        email: user.email,
+        firstName: user.firstName || 'Usuario',
+        lastName: user.lastName || 'Nabra'
+      };
+    } catch (error) {
+      this.logger.error(`Could not fetch user info for ${userId}:`, error);
+      // NO enviar email si no tenemos datos válidos del usuario
+      throw new Error(`No se pudo obtener información del usuario ${userId}: ${error.message}`);
+    }
+  }
 
-      // Guardar el pago en la base de datos
-      const payment = new this.paymentModel({
-        userId,
-        provider: PaymentProvider.PAYPAL,
-        providerPaymentId: paypalResponse.id,
-        status: PaymentStatus.PENDING,
-        amount: createPaymentDto.totalAmount,
-        currency: createPaymentDto.currency || 'USD',
-        description: createPaymentDto.description,
-        orderId: createPaymentDto.orderId,
-        items: createPaymentDto.items,
-        approvalUrl: paypalResponse.approvalUrl,
-        metadata: {
-          returnUrl: createPaymentDto.returnUrl,
-          cancelUrl: createPaymentDto.cancelUrl,
-        },
+  // --- Mercado Pago Checkout Pro ---
+  async createMercadoPagoCheckoutFromCart(
+    userId: string,
+    checkoutData: CheckoutWithShippingDto = {},
+  ): Promise<{ id: string; init_point: string }> {
+    try {
+      console.log(`🛒 [CHECKOUT-START] Iniciando checkout para usuario: ${userId}`);
+      console.log(`🛒 [CHECKOUT-START] checkoutData recibido:`, {
+        hasShippingData: !!checkoutData.shippingData,
+        hasSimpleShipping: !!checkoutData.simpleShipping,
+        shippingDataKeys: checkoutData.shippingData ? Object.keys(checkoutData.shippingData) : [],
+        shipmentPrice: checkoutData.shippingData?.shipment?.price
       });
 
-      await payment.save();
-
-      this.logger.log(`Payment created for user ${userId}: ${payment._id}`);
-
-      return {
-        id: payment._id?.toString() || '',
-        status: paypalResponse.status,
-        approvalUrl: paypalResponse.approvalUrl,
-      };
-    } catch (error) {
-      this.logger.error('Error creating payment:', error);
-      throw new BadRequestException(`Payment creation failed: ${error.message}`);
-    }
-  }
-
-  async capturePayment(paymentId: string, payerId?: string): Promise<PaymentResponseDto> {
-    try {
-      console.log("entramos en capturePayment");
-      const payment = await this.paymentModel.findById(paymentId);
-      if (!payment) {
-        throw new NotFoundException('Payment not found');
-      }
-
-      if (payment.status !== PaymentStatus.PENDING) {
-        throw new BadRequestException('Payment cannot be captured');
-      }
-
-      // Capturar el pago en PayPal
-      console.log("capturamos el pago en paypal");
-      const paypalResponse = await this.paypalService.capturePayment(
-        payment.providerPaymentId,
-        payerId,
-      );
-
-      console.log("paypalResponse", paypalResponse);
-      // Actualizar el estado del pago
-      payment.status = PaymentStatus.COMPLETED;
-      payment.captureId = paypalResponse.id;
-      payment.payerId = payerId;
-      console.log("guardamos el pago en la base de datos");
-      await payment.save();
-      console.log("pago guardado en la base de datos");
-      this.logger.log(`Payment captured: ${paymentId}`);
-
-      console.log("retornamos el pago");
-      return {
-        id: payment._id?.toString() || '',
-        status: paypalResponse.status,
-      };
-    } catch (error) {
-      this.logger.error('Error capturing payment:', error);
-      throw new BadRequestException(`Payment capture failed: ${error.message}`);
-    }
-  }
-
-  async getPayment(paymentId: string): Promise<PaymentDocument> {
-    const payment = await this.paymentModel.findById(paymentId);
-    if (!payment) {
-      throw new NotFoundException('Payment not found');
-    }
-    return payment;
-  }
-
-  async getUserPayments(userId: string, limit: number = 10, offset: number = 0): Promise<PaymentDocument[]> {
-    return this.paymentModel
-      .find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .skip(offset)
-      .exec();
-  }
-
-  async cancelPayment(paymentId: string): Promise<boolean> {
-    try {
-      const payment = await this.paymentModel.findById(paymentId);
-      if (!payment) {
-        throw new NotFoundException('Payment not found');
-      }
-
-      if (payment.status !== PaymentStatus.PENDING) {
-        throw new BadRequestException('Payment cannot be cancelled');
-      }
-
-      // Cancelar en PayPal (si es posible)
-      await this.paypalService.cancelPayment(payment.providerPaymentId);
-
-      // Actualizar estado en la base de datos
-      payment.status = PaymentStatus.CANCELLED;
-      await payment.save();
-
-      this.logger.log(`Payment cancelled: ${paymentId}`);
-      return true;
-    } catch (error) {
-      this.logger.error('Error cancelling payment:', error);
-      return false;
-    }
-  }
-
-  async createPaymentFromCart(userId: string, checkoutDto: CartCheckoutDto): Promise<PaymentResponseDto> {
-    try {
-      // Validar el carrito antes de proceder
-      const validation = await this.cartService.validateCartForCheckout(userId);
-      if (!validation.valid) {
-        throw new BadRequestException(`Cart validation failed: ${validation.errors.join(', ')}`);
-      }
-
-      // Obtener el carrito del usuario
+      // Obtener el carrito del usuario primero
       const cart = await this.cartService.getCart(userId);
       
       if (!cart.items || cart.items.length === 0) {
-        throw new BadRequestException('Cart is empty');
+        throw new BadRequestException({
+          message: 'Your cart is empty. Please add items before proceeding to checkout.',
+          error: 'EMPTY_CART',
+          statusCode: 400,
+        });
       }
+
+      // Validar el carrito antes de proceder
+      const validation = await this.cartService.validateCartForCheckout(userId);
+      if (!validation.valid) {
+        throw new BadRequestException({
+          message: `Cart validation failed: ${validation.errors.join(', ')}`,
+          error: 'CART_VALIDATION_FAILED',
+          statusCode: 400,
+        });
+      }
+
 
       // Preparar items para reserva de stock
       const stockItems = cart.items.map(item => {
@@ -195,48 +121,195 @@ export class PaymentsService {
       }
 
       try {
-        // Calcular el total y preparar los items
+        // Calcular total e items
         let totalAmount = 0;
-        const items = cart.items.map((item) => {
-          const itemTotal = (item.product as any).price * item.quantity;
+        const currency = process.env.MERCADOPAGO_CURRENCY || 'MXN';
+        const mpItems = cart.items.map((item) => {
+          const product = item.product as any;
+          const itemTotal = product.price * item.quantity;
           totalAmount += itemTotal;
-
           return {
-            name: (item.product as any).name,
-            description: (item.product as any).description || '',
+            id: item._id.toString(), // ID único del item del carrito
+            title: product.name,
+            description: product.description || '',
             quantity: item.quantity,
-            price: (item.product as any).price,
-            currency: 'USD',
+            unit_price: Number(product.price),
+            currency_id: currency,
           };
         });
 
-        const createPaymentDto: CreatePaymentDto = {
-          orderId: cart._id?.toString() || '',
-          description: `Payment for cart ${cart._id}`,
-          items,
-          totalAmount,
-          currency: 'USD',
-          returnUrl: checkoutDto.returnUrl,
-          cancelUrl: checkoutDto.cancelUrl,
-        };
-
-        const paymentResponse = await this.createPayment(userId, createPaymentDto);
+        // Agregar costo de envío si se proporcionan datos de envío
+        let shippingCost = 0;
+        console.log(`📦 [CHECKOUT-SHIPPING] ===== PROCESANDO DATOS DE ENVÍO =====`);
+        console.log(`📦 [CHECKOUT-SHIPPING] Tipo de envío recibido:`);
+        console.log(`📦 [CHECKOUT-SHIPPING] - shippingData (DrEnvío):`, !!checkoutData.shippingData);
+        console.log(`📦 [CHECKOUT-SHIPPING] - simpleShipping (Dirección):`, !!checkoutData.simpleShipping);
+        console.log(`📦 [CHECKOUT-SHIPPING] - shippingOption (Transportista):`, !!checkoutData.shippingOption);
         
-        // Guardar información de envío con el pago
-        const payment = await this.paymentModel.findById(paymentResponse.id);
-        if (payment) {
-          payment.metadata = {
-            ...payment.metadata,
-            shippingAddress: checkoutDto.shippingAddress,
-            shippingMethod: checkoutDto.shippingMethod || 'standard',
-          };
-          await payment.save();
+        if (checkoutData.shippingData && checkoutData.shippingData.shipment) {
+          shippingCost = checkoutData.shippingData.shipment.price;
+          console.log(`📦 [CHECKOUT-SHIPPING] ✅ USANDO: DrEnvío`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Costo: $${shippingCost}`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Transportista: ${checkoutData.shippingData.shipment.carrier}`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Servicio: ${checkoutData.shippingData.shipment.service}`);
+          
+          if (shippingCost > 0) {
+            mpItems.push({
+              id: 'shipping',
+              title: `Envío - ${checkoutData.shippingData.shipment.carrier} ${checkoutData.shippingData.shipment.service}`,
+              description: `Servicio de envío ${checkoutData.shippingData.shipment.service} por ${checkoutData.shippingData.shipment.carrier}`,
+              quantity: 1,
+              unit_price: Number(shippingCost),
+              currency_id: currency,
+            });
+            totalAmount += shippingCost;
+            console.log(`📦 [CHECKOUT-SHIPPING] ✅ Item de envío agregado a MercadoPago`);
+            console.log(`📦 [CHECKOUT-SHIPPING] - Total actualizado: $${totalAmount}`);
+          }
+        } else if (checkoutData.shippingOption && checkoutData.shippingOption.price) {
+          // Usar información de shippingOption si está disponible
+          shippingCost = checkoutData.shippingOption.price;
+          console.log(`📦 [CHECKOUT-SHIPPING] ✅ USANDO: Opción de Transportista`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Costo: $${shippingCost}`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Transportista: ${checkoutData.shippingOption.carrier || 'No especificado'}`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Servicio: ${checkoutData.shippingOption.service || 'No especificado'}`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Tiempo: ${checkoutData.shippingOption.days || 'No especificado'}`);
+          
+          if (shippingCost > 0) {
+            mpItems.push({
+              id: 'shipping',
+              title: `Envío - ${checkoutData.shippingOption.carrier || 'Transportista'} ${checkoutData.shippingOption.service || 'Estándar'}`,
+              description: `Servicio de envío ${checkoutData.shippingOption.service || 'Estándar'} por ${checkoutData.shippingOption.carrier || 'Transportista'} (${checkoutData.shippingOption.days || 'Entrega estándar'})`,
+              quantity: 1,
+              unit_price: Number(shippingCost),
+              currency_id: currency,
+            });
+            totalAmount += shippingCost;
+            console.log(`📦 [CHECKOUT-SHIPPING] ✅ Item de envío agregado a MercadoPago`);
+            console.log(`📦 [CHECKOUT-SHIPPING] - Total actualizado: $${totalAmount}`);
+          }
+        } else if (checkoutData.simpleShipping) {
+          console.log(`📦 [CHECKOUT-SHIPPING] ✅ USANDO: Solo Dirección (sin costo)`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Dirección: ${checkoutData.simpleShipping.address.city}, ${checkoutData.simpleShipping.address.country}`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Cliente: ${checkoutData.simpleShipping.contact.firstName} ${checkoutData.simpleShipping.contact.lastName}`);
+          // Para simpleShipping, el costo de envío es 0 por defecto
+          shippingCost = 0;
+          console.log(`📦 [CHECKOUT-SHIPPING] - Costo: $0 (sin transportista seleccionado)`);
+        } else {
+          console.log(`📦 [CHECKOUT-SHIPPING] ❌ NO HAY DATOS DE ENVÍO`);
+          console.log(`📦 [CHECKOUT-SHIPPING] - Costo: $0`);
+          shippingCost = 0;
         }
         
-        // Limpiar el carrito después de crear el pago exitosamente
-        await this.cartService.clearCart(userId);
+        console.log(`📦 [CHECKOUT-SHIPPING] ===== RESUMEN FINAL =====`);
+        console.log(`📦 [CHECKOUT-SHIPPING] - Costo de envío: $${shippingCost}`);
+        console.log(`📦 [CHECKOUT-SHIPPING] - Total del carrito: $${totalAmount - shippingCost}`);
+        console.log(`📦 [CHECKOUT-SHIPPING] - Total final: $${totalAmount}`);
+
+
+        // URLs dinámicas basadas en configuración
+        const baseUrl = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
+        const success = `${baseUrl}/payments/mercadopago/return`;
+        const failure = `${baseUrl}/payments/mercadopago/return`;
+        const pending = `${baseUrl}/payments/mercadopago/return`;
+        const notificationUrl = `${baseUrl}/payments/webhook/mercadopago`;
+
+        const pref = await this.mpService.createCheckoutPreference({
+          items: mpItems,
+          backUrls: { success, failure, pending },
+          notificationUrl,
+          externalReference: cart._id?.toString(),
+          // MP requiere back_urls.success definido si auto_return = approved
+          autoReturn: 'approved',
+          currency,
+        });
+
+        // Guardar pago local en estado pending
+        console.log(`💾 [CHECKOUT-SAVE] Guardando pago con metadata de envío:`, {
+          hasShippingData: !!checkoutData.shippingData,
+          shippingCost: shippingCost,
+          cartId: cart._id?.toString(),
+          shippingDataOrigin: checkoutData.shippingData?.origin?.city,
+          shippingDataDestination: checkoutData.shippingData?.destination?.city
+        });
+
+        const metadataToSave: any = {
+          cartId: cart._id?.toString(),
+          preferenceId: pref.id,
+          hasShipping: !!(checkoutData.shippingData || checkoutData.simpleShipping || checkoutData.shippingOption),
+          shippingCost: shippingCost,
+          shippingData: checkoutData.shippingData || null,
+          simpleShipping: checkoutData.simpleShipping || null,
+          shippingOption: checkoutData.shippingOption || null,
+          cartItems: cart.items.map((item: any) => ({
+            cartItemId: item._id.toString(),
+            productId: (item.product as any)._id?.toString(),
+            quantity: item.quantity,
+          })),
+        };
+
+        console.log(`💾 [CHECKOUT-SAVE] Metadata a guardar:`, {
+          hasShipping: metadataToSave.hasShipping,
+          shippingCost: metadataToSave.shippingCost,
+          hasShippingDataObject: !!metadataToSave.shippingData,
+          shippingDataKeys: metadataToSave.shippingData ? Object.keys(metadataToSave.shippingData) : []
+        });
+
+        const payment = new this.paymentModel({
+          userId,
+          provider: PaymentProvider.MERCADOPAGO,
+          providerPaymentId: pref.id,
+          status: PaymentStatus.PENDING,
+          amount: Number(totalAmount.toFixed(2)),
+          currency,
+          description: `MP preference for cart ${cart._id}`,
+          orderId: undefined,
+          items: cart.items.map((i: any) => ({
+            name: i.product.name,
+            description: i.product.description || '',
+            quantity: i.quantity,
+            price: i.product.price,
+            currency,
+          })),
+          approvalUrl: pref.init_point,
+          metadata: metadataToSave,
+        });
         
-        return paymentResponse;
+        console.log(`💾 [CHECKOUT-SAVE] Modelo de pago creado, guardando en DB...`);
+        await payment.save();
+        
+        console.log(`✅ [CHECKOUT-SAVE] Pago guardado exitosamente con ID: ${payment._id}`);
+        console.log(`✅ [CHECKOUT-SAVE] Metadata guardado:`, {
+          keys: Object.keys(payment.metadata || {}),
+          hasShipping: payment.metadata?.hasShipping,
+          shippingCost: payment.metadata?.shippingCost,
+          hasShippingData: !!payment.metadata?.shippingData
+        });
+
+        // GUARDAR EN CACHÉ TEMPORAL (por si el metadata no se guarda bien en DB)
+        if (checkoutData.shippingData || checkoutData.simpleShipping || checkoutData.shippingOption) {
+          const cacheKey = pref.id; // Usar preference ID como key
+          this.shippingDataCache.set(cacheKey, {
+            shippingData: checkoutData.shippingData || null,
+            simpleShipping: checkoutData.simpleShipping || null,
+            shippingOption: checkoutData.shippingOption || null,
+            shippingCost: shippingCost,
+            timestamp: Date.now(),
+            userId: userId
+          });
+          console.log(`💾 [CACHE] Datos de envío guardados en caché temporal con key: ${cacheKey}`);
+          console.log(`💾 [CACHE] Total items en caché: ${this.shippingDataCache.size}`);
+          
+          // Limpiar caché después de 1 hora
+          setTimeout(() => {
+            if (this.shippingDataCache.has(cacheKey)) {
+              this.shippingDataCache.delete(cacheKey);
+              console.log(`🗑️ [CACHE] Datos de envío expirados y eliminados: ${cacheKey}`);
+            }
+          }, 3600000); // 1 hora
+        }
+
+        return pref;
       } catch (error) {
         // Si falla la creación del pago, liberar el stock reservado
         for (const item of stockItems) {
@@ -245,12 +318,24 @@ export class PaymentsService {
         throw error;
       }
     } catch (error) {
-      this.logger.error('Error creating payment from cart:', error);
-      throw new BadRequestException(`Failed to create payment from cart: ${error.message}`);
+      // Si es un error de validación conocido, devolverlo tal como está
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      // Solo log para errores críticos
+      this.logger.error('Critical error creating Mercado Pago checkout:', error);
+      
+      // Para otros errores, crear un mensaje más limpio
+      throw new BadRequestException(`Failed to create Mercado Pago checkout from cart: ${error.message}`);
     }
   }
 
-  async createPartialPaymentFromCart(userId: string, partialCheckoutDto: PartialCheckoutDto): Promise<PaymentResponseDto> {
+
+  async createMercadoPagoPartialCheckoutFromCart(
+    userId: string,
+    partialCheckoutDto: PartialCheckoutDto,
+  ): Promise<{ id: string; init_point: string }> {
     try {
       // Obtener el carrito del usuario
       const cart = await this.cartService.getCart(userId);
@@ -327,58 +412,71 @@ export class PaymentsService {
 
       try {
         // Preparar items para el pago
-        const paymentItems = selectedItems.map((item) => {
+        const currency = process.env.MERCADOPAGO_CURRENCY || 'MXN';
+        const mpItems = selectedItems.map((item) => {
           const product = item.cartItem.product as any;
           const itemTotal = product.price * item.requestedQuantity;
           totalAmount += itemTotal;
 
           return {
-            name: product.name,
+            id: item.cartItem._id.toString(),
+            title: product.name,
             description: product.description || '',
             quantity: item.requestedQuantity,
-            price: product.price,
-            currency: 'USD',
+            unit_price: Number(product.price),
+            currency_id: currency,
           };
         });
 
-        const createPaymentDto: CreatePaymentDto = {
-          orderId: cart._id?.toString() || '',
-          description: `Partial payment for cart ${cart._id}`,
-          items: paymentItems,
-          totalAmount,
-          currency: 'USD',
-          returnUrl: partialCheckoutDto.returnUrl,
-          cancelUrl: partialCheckoutDto.cancelUrl,
-        };
+        const baseUrl = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
+        const success = partialCheckoutDto.returnUrl || `${baseUrl}/payments/mercadopago/return`;
+        const failure = partialCheckoutDto.cancelUrl || `${baseUrl}/payments/mercadopago/return`;
+        const pending = `${baseUrl}/payments/mercadopago/return`;
 
-        const paymentResponse = await this.createPayment(userId, createPaymentDto);
-        
-        // Guardar información de envío con el pago
-        const payment = await this.paymentModel.findById(paymentResponse.id);
-        if (payment) {
-          payment.metadata = {
-            ...payment.metadata,
-            shippingAddress: partialCheckoutDto.shippingAddress,
-            shippingMethod: partialCheckoutDto.shippingMethod || 'standard',
-          };
-          await payment.save();
-        }
-        
-        // Actualizar cantidades en el carrito
-        for (const selectedItem of selectedItems) {
-          const cartItem = selectedItem.cartItem;
-          const newQuantity = cartItem.quantity - selectedItem.requestedQuantity;
-          
-          if (newQuantity <= 0) {
-            // Remover el item del carrito
-            await this.cartService.removeFromCart(userId, cartItem._id.toString());
-          } else {
-            // Actualizar la cantidad
-            await this.cartService.updateCartItem(userId, cartItem._id.toString(), { quantity: newQuantity });
-          }
-        }
-        
-        return paymentResponse;
+        const notificationUrl = `${baseUrl}/payments/webhook/mercadopago`;
+
+        const pref = await this.mpService.createCheckoutPreference({
+          items: mpItems,
+          backUrls: { success, failure, pending },
+          notificationUrl,
+          externalReference: cart._id?.toString(),
+          autoReturn: 'approved',
+          currency,
+        });
+
+        // Guardar pago local en estado pending
+        const payment = new this.paymentModel({
+          userId,
+          provider: PaymentProvider.MERCADOPAGO,
+          providerPaymentId: pref.id,
+          status: PaymentStatus.PENDING,
+          amount: Number(totalAmount.toFixed(2)),
+          currency,
+          description: `MP partial preference for cart ${cart._id}`,
+          orderId: undefined,
+          items: selectedItems.map((item) => ({
+            name: (item.cartItem.product as any).name,
+            description: (item.cartItem.product as any).description || '',
+            quantity: item.requestedQuantity,
+            price: (item.cartItem.product as any).price,
+            currency,
+          })),
+          approvalUrl: pref.init_point,
+          metadata: {
+            cartId: cart._id?.toString(),
+            preferenceId: pref.id,
+            isPartial: true,
+            selectedItems: selectedItems.map(item => ({
+              cartItemId: item.cartItem._id.toString(),
+              productId: (item.cartItem.product as any)._id?.toString(),
+              requestedQuantity: item.requestedQuantity,
+              originalQuantity: item.cartItem.quantity,
+            })),
+          },
+        });
+        await payment.save();
+
+        return pref;
       } catch (error) {
         // Si falla la creación del pago, liberar el stock reservado
         for (const item of stockItems) {
@@ -387,19 +485,441 @@ export class PaymentsService {
         throw error;
       }
     } catch (error) {
-      this.logger.error('Error creating partial payment from cart:', error);
-      throw new BadRequestException(`Failed to create partial payment from cart: ${error.message}`);
+      // Si es un error de validación conocido, devolverlo tal como está
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      // Solo log para errores críticos
+      this.logger.error('Critical error creating Mercado Pago partial checkout:', error);
+      
+      // Para otros errores, crear un mensaje más limpio
+      throw new BadRequestException(`Failed to create Mercado Pago partial checkout from cart: ${error.message}`);
     }
   }
 
-  async updatePaymentStatus(paymentId: string, status: PaymentStatus | string, errorMessage?: string): Promise<void> {
+  async handleMercadoPagoReturn(params: {
+    paymentId?: string;
+    status?: string;
+    merchantOrderId?: string;
+    externalReference?: string;
+  }) {
+    const status = (params.status || '').toLowerCase();
+    const isApproved = status === 'approved';
+    const isPending = status === 'pending' || status === 'in_process';
+    const isFailure = !isApproved && !isPending;
+
+    // Procesar la lógica del pago si es exitoso
+    let createdOrderId: string | null = null;
+    if (isApproved && params.paymentId) {
+      try {
+        // Buscar el pago por external_reference o payment_id
+        let payment = await this.paymentModel.findOne({ 
+          'metadata.cartId': params.externalReference 
+        });
+        
+        if (!payment && params.paymentId) {
+          // Buscar por payment_id de MP
+          const paymentInfo = await this.mpService.getPaymentById(String(params.paymentId));
+          payment = await this.paymentModel.findOne({ 
+            providerPaymentId: paymentInfo?.preference_id 
+          });
+        }
+
+        if (payment && payment.status === PaymentStatus.PENDING) {
+          // Verificar si ya existe una orden para este pago (evitar duplicados)
+          const existingOrder = await this.ordersService['orderModel'].findOne({ 
+            paymentId: (payment as any)._id 
+          });
+          
+          if (existingOrder) {
+            console.log(`⚠️ [PAYMENT-RETURN] Ya existe una orden para este pago: ${existingOrder._id}, omitiendo creación duplicada`);
+            this.logger.warn(`Order already exists for payment ${(payment as any)._id}, skipping duplicate creation in return handler`);
+            // Continuar con la redirección pero sin crear orden duplicada
+            createdOrderId = (existingOrder as any)._id?.toString() || null;
+          } else {
+            // Actualizar estado del pago
+            payment.status = PaymentStatus.COMPLETED;
+            payment.captureId = String(params.paymentId);
+            await payment.save();
+
+            // Crear orden automáticamente
+            try {
+            const userInfo = await this.getUserInfo(payment.userId.toString());
+            console.log(`📧 [PAYMENT SERVICE] Creando orden desde pago exitoso para usuario: ${payment.userId}, email: ${userInfo.email}`);
+            const order = await this.ordersService.createOrderFromPayment({
+              userId: payment.userId.toString(),
+              paymentId: (payment as any)._id.toString(),
+              items: payment.items.map((it) => ({ 
+                name: it.name, 
+                quantity: it.quantity, 
+                price: it.price 
+              })),
+              totalAmount: payment.amount,
+              currency: payment.currency,
+              customerEmail: userInfo.email,
+              customerName: `${userInfo.firstName} ${userInfo.lastName}`,
+              shippingData: payment.metadata?.shippingData || null,
+              simpleShipping: payment.metadata?.simpleShipping || null,
+              shippingOption: payment.metadata?.shippingOption || null,
+              shippingCost: payment.metadata?.shippingCost || 0,
+            });
+            console.log(`✅ [PAYMENT SERVICE] Orden ${order._id} creada exitosamente, se enviará email a: ${userInfo.email}`);
+            this.logger.log(`Order ${order._id} creada desde retorno de Mercado Pago`);
+            createdOrderId = (order as any)._id?.toString() || null;
+
+            // Generar envío automáticamente si hay datos de envío
+            console.log(`🔍 [PAYMENT-RETURN] Verificando datos de envío:`, {
+              hasShippingData: !!payment.metadata?.shippingData,
+              shippingCost: payment.metadata?.shippingCost,
+              orderId: (order as any)._id,
+              metadataKeys: Object.keys(payment.metadata || {})
+            });
+            
+            if (payment.metadata?.shippingData && payment.metadata?.shippingCost > 0) {
+              try {
+                console.log(`🚚 [PAYMENT-RETURN] Generando envío automático para orden: ${(order as any)._id}`);
+                await this.ordersService.generateShipmentForOrder((order as any)._id.toString(), payment.metadata.shippingData);
+                console.log(`✅ [PAYMENT-RETURN] Envío generado exitosamente para orden: ${(order as any)._id}`);
+              } catch (shipmentError) {
+                console.error(`❌ [PAYMENT-RETURN] Error generando envío para orden ${(order as any)._id}:`, shipmentError);
+                this.logger.error(`Failed to generate shipment for order ${(order as any)._id}:`, shipmentError);
+                // No lanzamos el error para no afectar la creación de la orden
+              }
+            } else {
+              console.log(`ℹ️ [PAYMENT-RETURN] No hay datos de envío para orden: ${(order as any)._id} - omitiendo generación de envío`);
+            }
+
+            // Manejar carrito según tipo de pago
+            if (payment.metadata?.isPartial) {
+              // Compra parcial: actualizar cantidades en el carrito
+              await this.handlePartialCartUpdate(payment);
+            } else {
+              // Compra completa: limpiar carrito
+              await this.cartService.clearCart(payment.userId.toString());
+              this.logger.log(`Cart cleared for user ${payment.userId} after successful MP return`);
+            }
+          } catch (orderError) {
+            this.logger.error('No se pudo crear la orden desde retorno MP', orderError);
+            // Si no se puede obtener email del usuario, crear orden sin email
+            try {
+              console.log(`⚠️ [PAYMENT SERVICE] No se pudo obtener email del usuario ${payment.userId}, creando orden sin email de confirmación`);
+              const order = await this.ordersService.createOrderFromPayment({
+                userId: payment.userId.toString(),
+                paymentId: (payment as any)._id.toString(),
+                items: payment.items.map((it) => ({ 
+                  name: it.name, 
+                  quantity: it.quantity, 
+                  price: it.price 
+                })),
+                totalAmount: payment.amount,
+                currency: payment.currency,
+                shippingData: payment.metadata?.shippingData || null,
+                shippingCost: payment.metadata?.shippingCost || 0,
+                // Sin email - no se enviará confirmación
+              });
+              console.log(`⚠️ [PAYMENT SERVICE] Orden ${order._id} creada SIN email de confirmación para usuario ${payment.userId}`);
+              this.logger.warn(`Order ${order._id} creada SIN email de confirmación para usuario ${payment.userId}`);
+              createdOrderId = (order as any)._id?.toString() || null;
+
+              // ========== DRENVÍO DESHABILITADO TEMPORALMENTE ==========
+              // Generar envío automáticamente si hay datos de envío (incluso sin email)
+              // if (payment.metadata?.shippingData && payment.metadata?.shippingCost > 0) {
+              //   try {
+              //     console.log(`🚚 [PAYMENT-FALLBACK] Generando envío automático para orden: ${order._id}`);
+              //     await this.ordersService.generateShipmentForOrder((order as any)._id.toString(), payment.metadata.shippingData);
+              //     console.log(`✅ [PAYMENT-FALLBACK] Envío generado exitosamente para orden: ${order._id}`);
+              //   } catch (shipmentError) {
+              //     console.error(`❌ [PAYMENT-FALLBACK] Error generando envío para orden ${order._id}:`, shipmentError);
+              //     this.logger.error(`Failed to generate shipment for order ${order._id}:`, shipmentError);
+              //   }
+              // }
+              // ========== FIN DRENVÍO DESHABILITADO ==========
+            } catch (fallbackError) {
+              this.logger.error('Error crítico: No se pudo crear la orden ni siquiera sin email', fallbackError);
+            }
+            }
+          }
+        } else if (payment && payment.status === PaymentStatus.COMPLETED) {
+          // El pago ya fue procesado por el webhook, solo limpiar carrito por seguridad
+          if (payment.metadata?.isPartial) {
+            await this.handlePartialCartUpdate(payment);
+          } else {
+            await this.cartService.clearCart(payment.userId.toString());
+            this.logger.log(`Cart cleared for user ${payment.userId} (already processed by webhook)`);
+          }
+        }
+      } catch (error) {
+        this.logger.error('Error procesando retorno de Mercado Pago:', error);
+      }
+    }
+
+    // Redirigir al frontend
+    const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
+    const successPath = process.env.FRONTEND_SUCCESS_PATH || '/orders';
+    const failurePath = process.env.FRONTEND_FAILURE_PATH || '/checkout/failure';
+    const pendingPath = process.env.FRONTEND_PENDING_PATH || '/checkout/pending';
+
+    let targetPath = isApproved ? successPath : isPending ? pendingPath : failurePath;
+    // Si tenemos orderId y estamos aprobados, redirigir a la orden específica
+    if (isApproved && createdOrderId) {
+      // Si successPath apunta a /orders, construir /orders/:id
+      try {
+        const successUrl = new URL(successPath, frontendBase);
+        // Si la ruta base termina en '/orders', reemplazar por '/orders/{id}'
+        if (successUrl.pathname.replace(/\/$/, '') === '/orders') {
+          targetPath = `/orders/${createdOrderId}`;
+        } else {
+          // Si el successPath es personalizado, agregar query param order_id
+          const tmp = new URL(targetPath, frontendBase);
+          tmp.searchParams.set('order_id', createdOrderId);
+          return { redirectUrl: tmp.toString(), orderId: createdOrderId };
+        }
+      } catch {}
+    }
+
+    const url = new URL(targetPath, frontendBase);
+    if (params.paymentId) url.searchParams.set('payment_id', String(params.paymentId));
+    if (params.status) url.searchParams.set('status', String(params.status));
+    if (params.merchantOrderId) url.searchParams.set('merchant_order_id', String(params.merchantOrderId));
+    if (params.externalReference) url.searchParams.set('external_reference', String(params.externalReference));
+
+    if (createdOrderId) {
+      url.searchParams.set('order_id', createdOrderId);
+    }
+
+    return { redirectUrl: url.toString(), orderId: createdOrderId };
+  }
+
+  async handleMercadoPagoWebhook(query: any, body: any, headers?: Record<string, any>) {
+    // MP envía: topic=payment & id (query) o resource en body
+    const topic = query?.topic || query?.type;
+    const id = query?.id || (query && query['data.id']) || body?.data?.id;
+
+    console.log(`📨 [WEBHOOK-RECEIVED] Webhook de MercadoPago recibido:`, {
+      topic,
+      paymentId: id,
+      query,
+      body
+    });
+
+    if (topic === 'payment' && id) {
+      // TODO: validar firma x-signature si configuras Webhook Secret
+      // headers?.['x-signature']
+      const paymentInfo = await this.mpService.getPaymentById(String(id));
+      const status = String(paymentInfo?.status || '').toLowerCase();
+
+      console.log(`📨 [WEBHOOK-MP-INFO] Información del pago desde MercadoPago:`, {
+        status,
+        preferenceId: paymentInfo?.preference_id,
+        externalRef: paymentInfo?.external_reference
+      });
+
+      // Buscar nuestro Payment por metadata/external_reference o por providerPaymentId (preferencia id)
+      const externalRef = paymentInfo?.external_reference;
+      let payment: PaymentDocument | null = null;
+      
+      // Primero intentar por preferenceId
+      if (paymentInfo?.preference_id) {
+        payment = await this.paymentModel.findOne({ providerPaymentId: paymentInfo.preference_id });
+        console.log(`🔍 [WEBHOOK] Búsqueda por preferenceId (${paymentInfo.preference_id}):`, payment ? 'ENCONTRADO' : 'NO ENCONTRADO');
+      }
+      
+      // Si no se encuentra y hay externalRef, buscar el pago MÁS RECIENTE con estado PENDING para ese carrito
+      if (!payment && externalRef) {
+        payment = await this.paymentModel
+          .findOne({ 
+            'metadata.cartId': externalRef,
+            status: PaymentStatus.PENDING // Solo pagos pendientes
+          })
+          .sort({ createdAt: -1 }) // Más reciente primero
+          .exec();
+        console.log(`🔍 [WEBHOOK] Búsqueda por cartId (${externalRef}) con status PENDING:`, payment ? `ENCONTRADO (${(payment as any)._id})` : 'NO ENCONTRADO');
+      }
+
+      if (!payment) {
+        console.log(`⚠️ [WEBHOOK] No se encontró pago en DB para preferenceId: ${paymentInfo?.preference_id}`);
+        return { ok: true };
+      }
+
+      console.log(`💳 [WEBHOOK] Pago encontrado en DB:`, {
+        paymentDbId: (payment as any)._id,
+        status: payment.status,
+        preferenceId: payment.providerPaymentId
+      });
+
+      if (status === 'approved') {
+
+        // ACTUALIZACIÓN ATÓMICA: Cambiar estado de PENDING a COMPLETED en una sola operación
+        const updateResult = await this.paymentModel.updateOne(
+          { 
+            _id: (payment as any)._id,
+            status: PaymentStatus.PENDING // Solo actualizar si está PENDING
+          },
+          { 
+            $set: { 
+              status: PaymentStatus.COMPLETED,
+              captureId: String(paymentInfo.id)
+            } 
+          }
+        );
+
+        if (updateResult.modifiedCount === 0) {
+          console.log(`⚠️ [WEBHOOK] Pago ya procesado por otro webhook, omitiendo duplicado`);
+          this.logger.warn(`Payment already processed by another webhook: ${(payment as any)._id}`);
+          return { ok: true };
+        }
+
+        console.log(`✅ [WEBHOOK] Pago actualizado atómicamente a COMPLETED (modificado: ${updateResult.modifiedCount})`);
+
+        // Recargar payment con el estado actualizado
+        payment = await this.paymentModel.findById((payment as any)._id);
+        
+        if (!payment) {
+          console.log(`❌ [WEBHOOK] No se pudo recargar el pago después de actualizar`);
+          return { ok: false };
+        }
+
+        console.log(`💳 [WEBHOOK] Metadata del pago:`, {
+          hasMetadata: !!payment.metadata,
+          metadataKeys: Object.keys(payment.metadata || {}),
+          hasShipping: payment.metadata?.hasShipping,
+          shippingCost: payment.metadata?.shippingCost,
+          hasShippingData: !!payment.metadata?.shippingData,
+          shippingDataKeys: payment.metadata?.shippingData ? Object.keys(payment.metadata.shippingData) : []
+        });
+
+        // INTENTAR RECUPERAR DATOS DE ENVÍO DEL CACHÉ
+        let shippingDataFromCache: any = null;
+        const preferenceId = payment.providerPaymentId;
+        
+        console.log(`🔍 [CACHE] Buscando datos de envío en caché con key: ${preferenceId}`);
+        console.log(`🔍 [CACHE] Total items en caché: ${this.shippingDataCache.size}`);
+        
+        if (this.shippingDataCache.has(preferenceId)) {
+          shippingDataFromCache = this.shippingDataCache.get(preferenceId);
+          console.log(`✅ [CACHE] Datos de envío recuperados del caché:`, {
+            hasShippingData: !!shippingDataFromCache?.shippingData,
+            hasSimpleShipping: !!shippingDataFromCache?.simpleShipping,
+            shippingCost: shippingDataFromCache?.shippingCost,
+            timestamp: shippingDataFromCache?.timestamp
+          });
+          
+          // Limpiar del caché después de usar
+          this.shippingDataCache.delete(preferenceId);
+          console.log(`🗑️ [CACHE] Datos de envío eliminados del caché después de usar`);
+        } else {
+          console.log(`❌ [CACHE] No se encontraron datos de envío en caché`);
+        }
+
+        // Usar datos del caché si existen, si no usar los del metadata
+        const finalShippingData = shippingDataFromCache?.shippingData || payment.metadata?.shippingData;
+        const finalSimpleShipping = shippingDataFromCache?.simpleShipping || payment.metadata?.simpleShipping;
+        const finalShippingOption = shippingDataFromCache?.shippingOption || payment.metadata?.shippingOption;
+        const finalShippingCost = shippingDataFromCache?.shippingCost || payment.metadata?.shippingCost || 0;
+
+        console.log(`🔍 [WEBHOOK] ===== DATOS DE ENVÍO PARA CREAR ORDEN =====`);
+        console.log(`🔍 [WEBHOOK] Fuente: ${shippingDataFromCache ? 'CACHE' : 'METADATA'}`);
+        console.log(`🔍 [WEBHOOK] Tipo de envío:`);
+        console.log(`🔍 [WEBHOOK] - DrEnvío (shippingData):`, !!finalShippingData);
+        console.log(`🔍 [WEBHOOK] - Dirección simple (simpleShipping):`, !!finalSimpleShipping);
+        console.log(`🔍 [WEBHOOK] - Transportista (shippingOption):`, !!finalShippingOption);
+        console.log(`🔍 [WEBHOOK] - Costo de envío: $${finalShippingCost}`);
+        
+        if (finalShippingData) {
+          console.log(`🔍 [WEBHOOK] ✅ USANDO: DrEnvío - ${finalShippingData.shipment?.carrier} ${finalShippingData.shipment?.service}`);
+        } else if (finalShippingOption) {
+          console.log(`🔍 [WEBHOOK] ✅ USANDO: Transportista - ${finalShippingOption.carrier} ${finalShippingOption.service}`);
+        } else if (finalSimpleShipping) {
+          console.log(`🔍 [WEBHOOK] ✅ USANDO: Solo Dirección - ${finalSimpleShipping.address.city}`);
+        } else {
+          console.log(`🔍 [WEBHOOK] ❌ SIN DATOS DE ENVÍO`);
+        }
+
+        // Crear orden
+        try {
+          const userInfo = await this.getUserInfo(payment.userId.toString());
+          const order = await this.ordersService.createOrderFromPayment({
+            userId: payment.userId.toString(),
+            paymentId: (payment as any)._id.toString(),
+            items: payment.items.map((it) => ({ name: it.name, quantity: it.quantity, price: it.price })),
+            totalAmount: payment.amount,
+            currency: payment.currency,
+            customerEmail: userInfo.email,
+            customerName: `${userInfo.firstName} ${userInfo.lastName}`,
+            shippingData: finalShippingData || null,
+            simpleShipping: finalSimpleShipping || null,
+            shippingOption: finalShippingOption || null,
+            shippingCost: finalShippingCost,
+          });
+
+          // ========== DRENVÍO DESHABILITADO TEMPORALMENTE ==========
+          // Generar envío automáticamente si hay datos de envío (DESPUÉS de crear orden)
+          // console.log(`🔍 [PAYMENT-WEBHOOK] Verificando datos de envío para generar DrEnvío:`, {
+          //   hasShippingData: !!finalShippingData,
+          //   shippingCost: finalShippingCost,
+          //   orderId: (order as any)._id
+          // });
+          
+          // if (finalShippingData && finalShippingCost > 0) {
+          //   try {
+          //     console.log(`🚚 [PAYMENT-WEBHOOK] Generando envío automático para orden: ${(order as any)._id}`);
+          //     await this.ordersService.generateShipmentForOrder((order as any)._id.toString(), finalShippingData);
+          //     console.log(`✅ [PAYMENT-WEBHOOK] Envío generado exitosamente para orden: ${(order as any)._id}`);
+          //   } catch (shipmentError) {
+          //     console.error(`❌ [PAYMENT-WEBHOOK] Error generando envío para orden ${(order as any)._id}:`, shipmentError);
+          //     this.logger.error(`Failed to generate shipment for order ${(order as any)._id}:`, shipmentError);
+          //     // No lanzamos el error para no afectar la creación de la orden
+          //   }
+          // } else {
+          //   console.log(`ℹ️ [PAYMENT-WEBHOOK] No hay datos de envío para orden: ${(order as any)._id} - omitiendo generación de envío`);
+          // }
+          // ========== FIN DRENVÍO DESHABILITADO ==========
+
+          // Manejar carrito según tipo de pago
+          if (payment.metadata?.isPartial) {
+            console.log(`🛒 [WEBHOOK] Procesando pago parcial, actualizando carrito...`);
+            await this.handlePartialCartUpdate(payment);
+          } else {
+            console.log(`🛒 [WEBHOOK] Procesando pago completo, limpiando carrito para usuario: ${payment.userId}`);
+            await this.cartService.clearCart(payment.userId.toString());
+            console.log(`✅ [WEBHOOK] Carrito limpiado exitosamente para usuario: ${payment.userId}`);
+          }
+        } catch (e) {
+          console.error('❌ [MERCADOPAGO-WEBHOOK] Error creando orden:', e);
+          this.logger.error('No se pudo crear la orden desde MP', e);
+        }
+      } else if (status === 'rejected' || status === 'cancelled' || status === 'cancelled_by_user') {
+        payment.status = PaymentStatus.CANCELLED;
+        payment.errorMessage = `MP status: ${status}`;
+        await payment.save();
+      } else if (status === 'in_process' || status === 'pending') {
+        payment.status = PaymentStatus.PENDING;
+        await payment.save();
+      }
+    }
+
+    return { ok: true };
+  }
+
+  async getUserPayments(userId: string, limit: number = 10, offset: number = 0): Promise<PaymentDocument[]> {
+    return this.paymentModel
+      .find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .skip(offset)
+      .exec();
+  }
+
+
+  async updatePaymentStatus(paymentId: string, status: PaymentStatus, errorMessage?: string): Promise<void> {
     try {
       const payment = await this.paymentModel.findById(paymentId);
       if (!payment) {
         throw new NotFoundException('Payment not found');
       }
 
-      payment.status = status as PaymentStatus;
+      payment.status = status;
       if (errorMessage) {
         payment.errorMessage = errorMessage;
       }
@@ -412,610 +932,32 @@ export class PaymentsService {
     }
   }
 
-  async findByMercadoPagoPreference(preferenceId: string): Promise<PaymentDocument | null> {
+
+  private async handlePartialCartUpdate(payment: any): Promise<void> {
     try {
-      // Buscar por providerPaymentId o por metadata.preferenceId
-      const payment = await this.paymentModel.findOne({
-        $or: [
-          { providerPaymentId: preferenceId },
-          { 'metadata.preferenceId': preferenceId }
-        ]
-      });
+      const selectedItems = payment.metadata?.selectedItems || [];
       
-      return payment;
-    } catch (error) {
-      this.logger.error('Error finding payment by preference ID:', error);
-      return null;
-    }
-  }
-
-  async capturePaymentByToken(paypalToken: string, payerId: string): Promise<PaymentResponseDto> {
-    try {
-      console.log("Buscando pago por token PayPal:", paypalToken);
-      
-      // Buscar el pago por el token de PayPal (providerPaymentId)
-      const payment = await this.paymentModel.findOne({ 
-        providerPaymentId: paypalToken 
-      });
-      
-      if (!payment) {
-        throw new NotFoundException(`Payment not found for PayPal token: ${paypalToken}`);
-      }
-
-      if (payment.status !== PaymentStatus.PENDING) {
-        throw new BadRequestException('Payment cannot be captured');
-      }
-
-      // Capturar el pago en PayPal
-      console.log("Capturando pago en PayPal");
-      const paypalResponse = await this.paypalService.capturePayment(paypalToken, payerId);
-
-      console.log("PayPal Response:", paypalResponse);
-      
-      // Actualizar el estado del pago
-      payment.status = PaymentStatus.COMPLETED;
-      payment.captureId = paypalResponse.id;
-      payment.payerId = payerId;
-      
-      await payment.save();
-      this.logger.log(`Payment captured by token: ${paypalToken} -> ${payment._id}`);
-
-      // Crear orden automáticamente cuando el pago es exitoso
-      try {
-        const orderData = {
-          userId: payment.userId.toString(),
-          paymentId: payment._id?.toString() || '',
-          items: payment.items.map(item => ({
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            productId: undefined, // No tenemos esta info en el pago actual
-          })),
-          totalAmount: payment.amount,
-          currency: payment.currency,
-        };
-
-        const order = await this.ordersService.createOrderFromPayment(orderData);
-        this.logger.log(`Order created automatically from payment: ${order._id}`);
-      } catch (orderError) {
-        this.logger.error('Failed to create order from payment:', orderError);
-        // No lanzamos error aquí para no afectar el pago exitoso
-      }
-
-      return {
-        id: payment._id?.toString() || '',
-        status: paypalResponse.status,
-      };
-    } catch (error) {
-      this.logger.error('Error capturing payment by token:', error);
-      throw new BadRequestException(`Payment capture failed: ${error.message}`);
-    }
-  }
-
-  async cancelPaymentByToken(paypalToken: string): Promise<void> {
-    try {
-      console.log("Cancelando pago por token PayPal:", paypalToken);
-      
-      // Buscar el pago por el token de PayPal
-      const payment = await this.paymentModel.findOne({ 
-        providerPaymentId: paypalToken 
-      });
-      
-      if (!payment) {
-        this.logger.warn(`Payment not found for cancellation with token: ${paypalToken}`);
-        return; // No lanzar error, puede ser que el pago no se haya creado aún
-      }
-
-      if (payment.status !== PaymentStatus.PENDING) {
-        this.logger.warn(`Payment ${payment._id} cannot be cancelled, current status: ${payment.status}`);
-        return;
-      }
-
-      // Actualizar estado en la base de datos
-      payment.status = PaymentStatus.CANCELLED;
-      payment.errorMessage = 'Payment cancelled by user';
-      await payment.save();
-
-      this.logger.log(`Payment cancelled by token: ${paypalToken} -> ${payment._id}`);
-    } catch (error) {
-      this.logger.error('Error cancelling payment by token:', error);
-      throw new BadRequestException(`Payment cancellation failed: ${error.message}`);
-    }
-  }
-
-  // ==================== MERCADOPAGO METHODS ====================
-
-  async createMercadoPagoPaymentFromCart(
-    userId: string, 
-    checkoutDto: CartCheckoutDto
-  ): Promise<{ 
-    id: string; 
-    init_point: string; 
-    preferenceId: string 
-  }> {
-    try {
-      // Validar el carrito antes de proceder
-      const validation = await this.cartService.validateCartForCheckout(userId);
-      if (!validation.valid) {
-        throw new BadRequestException(`Cart validation failed: ${validation.errors.join(', ')}`);
-      }
-
-      // Obtener el carrito del usuario
-      const cart = await this.cartService.getCart(userId);
-      
-      if (!cart.items || cart.items.length === 0) {
-        throw new BadRequestException('Cart is empty');
-      }
-
-      // NO reservamos stock aquí - El stock se restará SOLO cuando el pago sea exitoso
-      // Esto evita que el stock quede bloqueado si el usuario no completa el pago
-
-      // Preparar items para MercadoPago
-      const items = cart.items.map((item) => ({
-        title: (item.product as any).name,
-        description: (item.product as any).description || '',
-        quantity: item.quantity,
-        unit_price: (item.product as any).price,
-        currency_id: 'MXN', // Pesos mexicanos por defecto
-      }));
-
-      // Agregar el costo de envío como un item adicional si existe
-      if (checkoutDto.shippingOption?.price && checkoutDto.shippingOption.price > 0) {
-        items.push({
-          title: `Envío - ${checkoutDto.shippingOption.carrier || 'Estándar'}`,
-          description: checkoutDto.shippingOption.service || 'Servicio de envío',
-          quantity: 1,
-          unit_price: checkoutDto.shippingOption.price,
-          currency_id: 'MXN',
-        });
-      }
-
-      const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-      // Crear la preferencia de pago en MercadoPago
-      const mpResponse = await this.mercadoPagoService.createCheckoutPreference({
-        items,
-        externalReference: cart._id?.toString() || '',
-        notificationUrl: `${baseUrl}/payments/webhook/mercadopago`,
-        backUrls: {
-          success: checkoutDto.returnUrl || `${frontendUrl}/payment/success`,
-          failure: checkoutDto.cancelUrl || `${frontendUrl}/payment/failure`,
-          pending: `${frontendUrl}/payment/pending`,
-        },
-        autoReturn: 'approved',
-        currency: 'MXN',
-      });
-
-      // Calcular el total: productos + envío (si existe)
-      const cartTotal = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
-      const shippingCost = checkoutDto.shippingOption?.price || 0;
-      const totalAmount = cartTotal + shippingCost;
-
-      // Guardar el pago en la base de datos
-      const payment = new this.paymentModel({
-        userId,
-        provider: PaymentProvider.MERCADOPAGO,
-        providerPaymentId: mpResponse.id,
-        status: PaymentStatus.PENDING,
-        amount: totalAmount,
-        currency: 'MXN',
-        description: `Payment for cart ${cart._id}`,
-        orderId: cart._id,
-        items: cart.items.map((cartItem) => {
-          const product = cartItem.product as any;
-          const productId = product._id?.toString() || (typeof product === 'string' ? product : undefined);
-          return {
-            name: product.name,
-            description: product.description || '',
-            quantity: cartItem.quantity,
-            price: product.price,
-            currency: 'MXN',
-            productId, // Guardar productId para trazabilidad
-          };
-        }),
-        approvalUrl: mpResponse.init_point,
-        metadata: {
-          returnUrl: checkoutDto.returnUrl,
-          cancelUrl: checkoutDto.cancelUrl,
-          preferenceId: mpResponse.id,
-          shippingAddress: checkoutDto.shippingAddress,
-          shippingMethod: checkoutDto.shippingMethod || 'standard',
-          shippingContact: checkoutDto.shippingContact,
-          shippingOption: checkoutDto.shippingOption,
-        },
-      });
-
-      await payment.save();
-
-      this.logger.log(`MercadoPago payment created for user ${userId}: ${payment._id}`);
-
-      // NO limpiar el carrito aquí - se limpiará cuando MercadoPago confirme el pago exitoso
-      // El carrito se limpiará en el callback de éxito después de que el pago sea aprobado
-
-      return {
-        id: payment._id?.toString() || '',
-        init_point: mpResponse.init_point,
-        preferenceId: mpResponse.id,
-      };
-    } catch (error) {
-      this.logger.error('Error creating MercadoPago payment from cart:', error);
-      throw new BadRequestException(`Failed to create MercadoPago payment: ${error.message}`);
-    }
-  }
-
-  async createMercadoPagoPartialPaymentFromCart(
-    userId: string, 
-    partialCheckoutDto: PartialCheckoutDto
-  ): Promise<{ 
-    id: string; 
-    init_point: string; 
-    preferenceId: string 
-  }> {
-    try {
-      // Obtener el carrito del usuario
-      const cart = await this.cartService.getCart(userId);
-      
-      if (!cart.items || cart.items.length === 0) {
-        throw new BadRequestException('Cart is empty');
-      }
-
-      // Validar que todos los items solicitados existen en el carrito
-      const selectedItems: Array<{
-        cartItem: any;
-        requestedQuantity: number;
-      }> = [];
-
-      for (const partialItem of partialCheckoutDto.items) {
-        const cartItem = cart.items.find(item => item._id.toString() === partialItem.itemId);
-        if (!cartItem) {
-          throw new BadRequestException(`Item ${partialItem.itemId} not found in cart`);
-        }
-
-        if (partialItem.quantity > cartItem.quantity) {
-          throw new BadRequestException(
-            `Requested quantity (${partialItem.quantity}) exceeds cart quantity (${cartItem.quantity}) for item ${partialItem.itemId}`
-          );
-        }
-
-        // Extraer ID del producto correctamente
-        let productId: string;
-        if (typeof cartItem.product === 'string') {
-          productId = cartItem.product;
-        } else if (cartItem.product && typeof cartItem.product === 'object') {
-          productId = (cartItem.product as any)._id?.toString() || (cartItem.product as any).toString();
-        } else {
-          productId = (cartItem.product as any).toString();
-        }
-
-        // Validar stock disponible
-        const stockCheck = await this.productsService.checkStockAvailability(
-          productId,
-          partialItem.quantity
-        );
-
-        if (!stockCheck.available) {
-          throw new BadRequestException(`Insufficient stock for item ${partialItem.itemId}: ${stockCheck.message}`);
-        }
-
-        selectedItems.push({
-          cartItem,
-          requestedQuantity: partialItem.quantity
-        });
-      }
-
-      // Preparar items para reserva de stock
-      const stockItems = selectedItems.map(item => {
-        let productId: string;
-        if (typeof item.cartItem.product === 'string') {
-          productId = item.cartItem.product;
-        } else if (item.cartItem.product && typeof item.cartItem.product === 'object') {
-          productId = (item.cartItem.product as any)._id?.toString() || (item.cartItem.product as any).toString();
-        } else {
-          productId = (item.cartItem.product as any).toString();
-        }
-
-        return {
-          productId,
-          quantity: item.requestedQuantity
-        };
-      });
-
-      // Reservar stock
-      const stockReservation = await this.productsService.bulkReserveStock(stockItems);
-      if (!stockReservation.success) {
-        throw new BadRequestException(`Stock reservation failed: ${stockReservation.errors.join(', ')}`);
-      }
-
-      try {
-        // Preparar items para MercadoPago
-        const items = selectedItems.map((item) => {
-          const product = item.cartItem.product as any;
-          return {
-            title: product.name,
-            description: product.description || '',
-            quantity: item.requestedQuantity,
-            unit_price: product.price,
-            currency_id: 'MXN',
-          };
-        });
-
-        const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-        // Crear la preferencia de pago en MercadoPago
-        const mpResponse = await this.mercadoPagoService.createCheckoutPreference({
-          items,
-          externalReference: cart._id?.toString() || '',
-          notificationUrl: `${baseUrl}/payments/webhook/mercadopago`,
-          backUrls: {
-            success: partialCheckoutDto.returnUrl || `${frontendUrl}/payment/success`,
-            failure: partialCheckoutDto.cancelUrl || `${frontendUrl}/payment/failure`,
-            pending: `${frontendUrl}/payment/pending`,
-          },
-          autoReturn: 'approved',
-          currency: 'MXN',
-        });
-
-        // Guardar el pago en la base de datos
-        const totalAmount = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+      for (const selectedItem of selectedItems) {
+        const newQuantity = selectedItem.originalQuantity - selectedItem.requestedQuantity;
         
-        const payment = new this.paymentModel({
-          userId,
-          provider: PaymentProvider.MERCADOPAGO,
-          providerPaymentId: mpResponse.id,
-          status: PaymentStatus.PENDING,
-          amount: totalAmount,
-          currency: 'MXN',
-          description: `Partial payment for cart ${cart._id}`,
-          orderId: cart._id,
-          items: items.map(item => ({
-            name: item.title,
-            description: item.description,
-            quantity: item.quantity,
-            price: item.unit_price,
-            currency: 'MXN',
-          })),
-          approvalUrl: mpResponse.init_point,
-          metadata: {
-            returnUrl: partialCheckoutDto.returnUrl,
-            cancelUrl: partialCheckoutDto.cancelUrl,
-            preferenceId: mpResponse.id,
-            shippingAddress: partialCheckoutDto.shippingAddress,
-            shippingMethod: partialCheckoutDto.shippingMethod || 'standard',
-          },
-        });
-
-        await payment.save();
-
-        this.logger.log(`MercadoPago partial payment created for user ${userId}: ${payment._id}`);
-
-        // Actualizar cantidades en el carrito
-        for (const selectedItem of selectedItems) {
-          const cartItem = selectedItem.cartItem;
-          const newQuantity = cartItem.quantity - selectedItem.requestedQuantity;
-          
-          if (newQuantity <= 0) {
-            await this.cartService.removeFromCart(userId, cartItem._id.toString());
-          } else {
-            await this.cartService.updateCartItem(userId, cartItem._id.toString(), { quantity: newQuantity });
-          }
-        }
-
-        return {
-          id: payment._id?.toString() || '',
-          init_point: mpResponse.init_point,
-          preferenceId: mpResponse.id,
-        };
-      } catch (error) {
-        // Si falla la creación del pago, liberar el stock reservado
-        for (const item of stockItems) {
-          await this.productsService.releaseStock(item.productId, item.quantity);
-        }
-        throw error;
-      }
-    } catch (error) {
-      this.logger.error('Error creating MercadoPago partial payment from cart:', error);
-      throw new BadRequestException(`Failed to create MercadoPago partial payment: ${error.message}`);
-    }
-  }
-
-  // ==================== MERCADOPAGO V2 (CON FORMATO SIMPLE SHIPPING) ====================
-  
-  async createMercadoPagoPaymentFromCartV2(
-    userId: string,
-    checkoutDto: MercadoPagoCheckoutDto
-  ): Promise<{ 
-    id: string; 
-    init_point: string; 
-    preferenceId: string 
-  }> {
-    try {
-      // Validar el carrito antes de proceder
-      const validation = await this.cartService.validateCartForCheckout(userId);
-      if (!validation.valid) {
-        throw new BadRequestException(`Cart validation failed: ${validation.errors.join(', ')}`);
-      }
-
-      // Obtener el carrito del usuario
-      const cart = await this.cartService.getCart(userId);
-      
-      if (!cart.items || cart.items.length === 0) {
-        throw new BadRequestException('Cart is empty');
-      }
-
-      // Preparar items para reserva de stock
-      const stockItems = cart.items.map(item => {
-        let productId: string;
-        
-        if (typeof item.product === 'string') {
-          productId = item.product;
-        } else if (item.product && typeof item.product === 'object') {
-          productId = (item.product as any)._id?.toString() || (item.product as any).toString();
+        if (newQuantity <= 0) {
+          // Remover el item del carrito
+          await this.cartService.removeFromCart(payment.userId.toString(), selectedItem.cartItemId);
+          this.logger.log(`Removed item ${selectedItem.cartItemId} from cart for user ${payment.userId}`);
         } else {
-          productId = (item.product as any).toString();
-        }
-
-        return {
-          productId,
-          quantity: item.quantity
-        };
-      });
-
-      // Reservar stock antes de crear el pago
-      const stockReservation = await this.productsService.bulkReserveStock(stockItems);
-      if (!stockReservation.success) {
-        throw new BadRequestException(`Stock reservation failed: ${stockReservation.errors.join(', ')}`);
-      }
-
-      try {
-        // Preparar items para MercadoPago
-        const items = cart.items.map((item) => ({
-          title: (item.product as any).name,
-          description: (item.product as any).description || '',
-          quantity: item.quantity,
-          unit_price: (item.product as any).price,
-          currency_id: 'MXN',
-        }));
-
-        // IMPORTANTE: Agregar el costo de envío como un item adicional
-        // Esto suma el shipping.price al total que se cobra en MercadoPago
-        let shippingCost = 0;
-        if (checkoutDto?.shippingOption?.price && checkoutDto.shippingOption.price > 0) {
-          shippingCost = checkoutDto.shippingOption.price;
-          items.push({
-            title: `Envío - ${checkoutDto.shippingOption.carrier} (${checkoutDto.shippingOption.service})`,
-            description: `Entrega en ${checkoutDto.shippingOption.days || 'N/A'}`,
-            quantity: 1,
-            unit_price: shippingCost,
-            currency_id: 'MXN',
+          // Actualizar la cantidad
+          await this.cartService.updateCartItem(payment.userId.toString(), selectedItem.cartItemId, { 
+            quantity: newQuantity 
           });
+          this.logger.log(`Updated item ${selectedItem.cartItemId} quantity to ${newQuantity} for user ${payment.userId}`);
         }
-
-        const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-        // Crear la preferencia de pago en MercadoPago
-        const mpResponse = await this.mercadoPagoService.createCheckoutPreference({
-          items,
-          externalReference: cart._id?.toString() || '',
-          notificationUrl: `${baseUrl}/payments/webhook/mercadopago`,
-          backUrls: {
-            success: checkoutDto.returnUrl || `${frontendUrl}/payment/success`,
-            failure: checkoutDto.cancelUrl || `${frontendUrl}/payment/failure`,
-            pending: `${frontendUrl}/payment/pending`,
-          },
-          autoReturn: 'approved',
-          currency: 'MXN',
-        });
-
-        // Calcular total (productos + envío)
-        const totalAmount = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
-
-        // Guardar el pago en la base de datos con toda la información
-        const payment = new this.paymentModel({
-          userId,
-          provider: PaymentProvider.MERCADOPAGO,
-          providerPaymentId: mpResponse.id,
-          status: PaymentStatus.PENDING,
-          amount: totalAmount,
-          currency: 'MXN',
-          description: `Payment for cart ${cart._id}`,
-          orderId: cart._id,
-          items: items.map(item => ({
-            name: item.title,
-            description: item.description,
-            quantity: item.quantity,
-            price: item.unit_price,
-            currency: 'MXN',
-          })),
-          approvalUrl: mpResponse.init_point,
-          metadata: {
-            returnUrl: checkoutDto?.returnUrl,
-            cancelUrl: checkoutDto?.cancelUrl,
-            preferenceId: mpResponse.id,
-            // Guardar información de contacto y dirección (si viene)
-            shippingContact: checkoutDto?.simpleShipping ? {
-              email: checkoutDto.simpleShipping.contact.emailOrPhone,
-              firstName: checkoutDto.simpleShipping.contact.firstName,
-              lastName: checkoutDto.simpleShipping.contact.lastName,
-              phone: checkoutDto.simpleShipping.contact.phone,
-            } : null,
-            shippingAddress: checkoutDto?.simpleShipping ? {
-              street: checkoutDto.simpleShipping.address.addressLine,
-              city: checkoutDto.simpleShipping.address.city,
-              state: checkoutDto.simpleShipping.address.state,
-              zip: checkoutDto.simpleShipping.address.postalCode,
-              country: checkoutDto.simpleShipping.address.country,
-            } : null,
-            // Guardar información de envío (si viene)
-            shippingOption: checkoutDto?.shippingOption ? {
-              carrier: checkoutDto.shippingOption.carrier,
-              service: checkoutDto.shippingOption.service,
-              price: checkoutDto.shippingOption.price,
-              days: checkoutDto.shippingOption.days,
-              serviceId: checkoutDto.shippingOption.service_id,
-              currency: checkoutDto.shippingOption.currency || 'MXN',
-            } : null,
-          },
-        });
-
-        await payment.save();
-
-        this.logger.log(`MercadoPago payment created for user ${userId}: ${payment._id}`);
-
-        // Limpiar el carrito después de crear el pago exitosamente
-        await this.cartService.clearCart(userId);
-
-        return {
-          id: payment._id?.toString() || '',
-          init_point: mpResponse.init_point,
-          preferenceId: mpResponse.id,
-        };
-      } catch (error) {
-        // Si falla la creación del pago, liberar el stock reservado
-        for (const item of stockItems) {
-          await this.productsService.releaseStock(item.productId, item.quantity);
-        }
-        throw error;
       }
+      
+      this.logger.log(`Partial cart update completed for user ${payment.userId}`);
     } catch (error) {
-      this.logger.error('Error creating MercadoPago payment from cart V2:', error);
-      throw new BadRequestException(`Failed to create MercadoPago payment: ${error.message}`);
-    }
-  }
-
-  // Método para limpiar el carrito del usuario
-  async clearUserCart(userId: string): Promise<void> {
-    try {
-      await this.cartService.clearCart(userId);
-      this.logger.log(`Cart cleared for user ${userId}`);
-    } catch (error) {
-      this.logger.error(`Error clearing cart for user ${userId}:`, error);
+      this.logger.error('Error updating partial cart:', error);
       throw error;
     }
   }
 
-  // Método para buscar un producto por nombre
-  async findProductByName(name: string): Promise<any> {
-    try {
-      const products = await this.productsService.search(name);
-      return products.find(p => p.name === name);
-    } catch (error) {
-      this.logger.error(`Error finding product by name ${name}:`, error);
-      return null;
-    }
-  }
-
-  // Método para decrementar el stock de un producto
-  async decrementProductStock(productId: string, quantity: number): Promise<void> {
-    try {
-      // Usamos reserveStock que internamente hace: product.stock -= quantity
-      await this.productsService.reserveStock(productId, quantity);
-      this.logger.log(`Stock decremented for product ${productId}: ${quantity} units`);
-    } catch (error) {
-      this.logger.error(`Error decrementing stock for product ${productId}:`, error);
-      throw error;
-    }
-  }
 }

@@ -21,7 +21,9 @@ import { ApplyDiscountDto } from './dtos/apply-discount.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PromotionStatus } from './schemas/promotion.schema';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Promotions')
 @Controller('promotions')
 export class PromotionsController {
   constructor(
@@ -31,30 +33,38 @@ export class PromotionsController {
 
   // ===== ENDPOINTS PÚBLICOS =====
 
+  @ApiOperation({ summary: 'Promos activas', description: 'Lista de promociones actualmente activas.' })
   @Public()
   @Get('active')
   async getActivePromotions() {
     return this.promotionsService.getActivePromotions();
   }
 
+  @ApiOperation({ summary: 'Cupones públicos', description: 'Lista de cupones visibles públicamente.' })
   @Public()
   @Get('coupons/public')
   async getPublicCoupons() {
     return this.promotionsService.getPublicCoupons();
   }
 
+  @ApiOperation({ summary: 'Promos por categoría', description: 'Promociones aplicables a una categoría.' })
+  @ApiParam({ name: 'category', description: 'Slug o nombre de categoría' })
   @Public()
   @Get('category/:category')
   async getPromotionsByCategory(@Param('category') category: string) {
     return this.promotionsService.getPromotionsByCategory(category);
   }
 
+  @ApiOperation({ summary: 'Promos por producto', description: 'Promociones aplicables a un producto.' })
+  @ApiParam({ name: 'productId', description: 'ID del producto' })
   @Public()
   @Get('product/:productId')
   async getPromotionsByProduct(@Param('productId') productId: string) {
     return this.promotionsService.getPromotionsByProduct(productId);
   }
 
+  @ApiOperation({ summary: 'Validar cupón', description: 'Valida un cupón antes de aplicarlo.' })
+  @ApiBody({ schema: { type: 'object', properties: { couponCode: { type: 'string', example: 'BIENVENIDA10' }, userId: { type: 'string', example: '64f...' } }, required: ['couponCode'] } })
   @Public()
   @Post('validate-coupon')
   async validateCoupon(@Body() body: { couponCode: string; userId?: string }) {
@@ -63,11 +73,15 @@ export class PromotionsController {
 
   // ===== ENDPOINTS DE USUARIO =====
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Aplicar descuentos', description: 'Calcula y aplica descuentos sobre items y total del carrito.' })
   @Post('apply-discounts')
   async applyDiscounts(@Request() req, @Body() applyDiscountDto: ApplyDiscountDto) {
     return this.discountCalculatorService.calculateDiscounts(req.user.userId, applyDiscountDto);
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Mis cupones', description: 'Lista de cupones disponibles para el usuario autenticado.' })
   @Get('my-coupons')
   async getUserCoupons(@Request() req) {
     const coupons = await this.promotionsService.getCoupons({
@@ -78,6 +92,9 @@ export class PromotionsController {
     return coupons;
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Aplicar cupón directo', description: 'Aplica un cupón sobre el carrito del usuario.' })
+  @ApiBody({ schema: { type: 'object', required: ['couponCode','cartItems','totalAmount'], example: { couponCode: 'BIENVENIDA10', cartItems: [{ productId: '64f...', cartItemId: '650...', productName: 'Remera', category: 'indumentaria', quantity: 1, price: 3999.99 }], totalAmount: 3999.99 } } })
   @Post('apply-coupon')
   async applyCoupon(
     @Request() req,
@@ -95,6 +112,12 @@ export class PromotionsController {
   // ===== ENDPOINTS ADMINISTRATIVOS =====
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Listar promociones (admin)', description: 'Listado filtrado y paginado de promociones.' })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'type', required: false })
+  @ApiQuery({ name: 'isActive', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'offset', required: false })
   @Get('admin/all')
   async getAllPromotions(@Query() query: any) {
     return this.promotionsService.getPromotions({
@@ -107,18 +130,22 @@ export class PromotionsController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Estadísticas (admin)', description: 'KPIs y métricas de promociones.' })
   @Get('admin/stats')
   async getPromotionStats() {
     return this.promotionsService.getPromotionStats();
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Crear promoción', description: 'Crea una promoción nueva.' })
   @Post('admin/create')
   async createPromotion(@Request() req, @Body() createPromotionDto: CreatePromotionDto) {
     return this.promotionsService.createPromotion(createPromotionDto, req.user.userId);
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Actualizar promoción', description: 'Actualiza campos de una promoción existente.' })
+  @ApiParam({ name: 'promotionId', description: 'ID de la promoción' })
   @Put('admin/:promotionId')
   async updatePromotion(
     @Request() req,
@@ -129,6 +156,8 @@ export class PromotionsController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Eliminar promoción', description: 'Elimina una promoción por ID.' })
+  @ApiParam({ name: 'promotionId', description: 'ID de la promoción' })
   @Delete('admin/:promotionId')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deletePromotion(@Param('promotionId') promotionId: string) {
@@ -136,6 +165,8 @@ export class PromotionsController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Cambiar estado', description: 'Cambia el estado de una promoción.' })
+  @ApiParam({ name: 'promotionId', description: 'ID de la promoción' })
   @Put('admin/:promotionId/status')
   async changePromotionStatus(
     @Param('promotionId') promotionId: string,
@@ -145,6 +176,8 @@ export class PromotionsController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Obtener promoción', description: 'Obtiene una promoción por ID.' })
+  @ApiParam({ name: 'promotionId', description: 'ID de la promoción' })
   @Get('admin/:promotionId')
   async getPromotionById(@Param('promotionId') promotionId: string) {
     return this.promotionsService.getPromotionById(promotionId);
@@ -153,6 +186,7 @@ export class PromotionsController {
   // ===== GESTIÓN DE CUPONES =====
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Listar cupones', description: 'Listado de cupones con filtros.' })
   @Get('admin/coupons')
   async getCoupons(@Query() query: any) {
     return this.promotionsService.getCoupons({
@@ -166,12 +200,14 @@ export class PromotionsController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Crear cupón', description: 'Crea un cupón asociado a una promoción.' })
   @Post('admin/coupons/create')
   async createCoupon(@Request() req, @Body() createCouponDto: CreateCouponDto) {
     return this.promotionsService.createCoupon(createCouponDto, req.user.userId);
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Generar cupones masivos', description: 'Genera N cupones para una promoción con prefijo opcional.' })
   @Post('admin/coupons/generate-bulk')
   async generateBulkCoupons(
     @Request() req,
@@ -196,6 +232,8 @@ export class PromotionsController {
   // ===== BÚSQUEDAS Y FILTROS =====
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Buscar promociones', description: 'Búsqueda de promociones por término.' })
+  @ApiQuery({ name: 'q', required: true })
   @Get('admin/search')
   async searchPromotions(@Query('q') searchTerm: string) {
     if (!searchTerm || searchTerm.trim().length < 2) {
@@ -206,6 +244,8 @@ export class PromotionsController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'Próximas a vencer', description: 'Promociones que vencen dentro de N días (default 7).' })
+  @ApiQuery({ name: 'days', required: false })
   @Get('admin/expiring-soon')
   async getExpiringSoonPromotions(@Query('days') days?: string) {
     const daysNum = days ? parseInt(days) : 7;
@@ -219,6 +259,7 @@ export class PromotionsController {
   }
 
   @Roles('admin')
+  @ApiOperation({ summary: 'No usadas', description: 'Promociones sin uso y no expiradas.' })
   @Get('admin/unused')
   async getUnusedPromotions() {
     return this.promotionsService.getPromotions({
@@ -227,30 +268,7 @@ export class PromotionsController {
     });
   }
 
-  // ===== ENDPOINTS DE TESTING =====
-
-  @Roles('admin')
-  @Post('admin/test-discount')
-  async testDiscount(@Body() testData: {
-    promotionId: string;
-    cartItems: any[];
-    totalAmount: number;
-    userId?: string;
-  }) {
-    // Endpoint para probar promociones antes de activarlas
-    const promotion = await this.promotionsService.getPromotionById(testData.promotionId);
-    
-    // Simular aplicación de descuento
-    const applyDiscountDto: ApplyDiscountDto = {
-      cartItems: testData.cartItems,
-      totalAmount: testData.totalAmount,
-    };
-
-    return this.discountCalculatorService.calculateDiscounts(
-      testData.userId || 'test-user',
-      applyDiscountDto
-    );
-  }
+  // ===== ENDPOINTS DE TESTING ===== (eliminados)
 
   // ===== REPORTES =====
 

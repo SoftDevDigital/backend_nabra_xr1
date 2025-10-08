@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Google OAuth - Nabra XR1</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        button {
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Google OAuth - Nabra XR1</h1>
+        
+        <div class="test-section">
+            <h3>1. Obtener URL de Autenticación</h3>
+            <p>Obtiene la URL de Google OAuth para iniciar el proceso de autenticación.</p>
+            <button onclick="getAuthUrl()">Obtener URL de Auth</button>
+            <div id="authUrlResult" class="result" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>2. Iniciar Login con Google</h3>
+            <p>Redirige directamente a Google para iniciar sesión.</p>
+            <button onclick="startGoogleAuth()">Iniciar Login con Google</button>
+            <div id="googleAuthResult" class="result" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>3. Estado del Servidor</h3>
+            <p>Verifica que el servidor esté funcionando correctamente.</p>
+            <button onclick="checkServerStatus()">Verificar Servidor</button>
+            <div id="serverStatus" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001';
+
+        function showResult(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = `result ${type}`;
+            element.textContent = content;
+        }
+
+        async function getAuthUrl() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/google/auth-url`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult('authUrlResult', 
+                        `✅ URL de Autenticación obtenida:\n\n${data.data.authUrl}\n\n` +
+                        `Estado: ${data.data.state}\n\n` +
+                        `Puedes copiar esta URL y abrirla en el navegador para probar el login.`, 
+                        'success'
+                    );
+                } else {
+                    showResult('authUrlResult', `❌ Error: ${JSON.stringify(data, null, 2)}`, 'error');
+                }
+            } catch (error) {
+                showResult('authUrlResult', `❌ Error de conexión: ${error.message}`, 'error');
+            }
+        }
+
+        function startGoogleAuth() {
+            showResult('googleAuthResult', 
+                `🔄 Redirigiendo a Google OAuth...\n\n` +
+                `Si no se abre automáticamente, puedes ir a:\n` +
+                `http://localhost:3001/auth/google`, 
+                'info'
+            );
+            
+            // Abrir en nueva ventana
+            window.open(`${API_BASE}/auth/google`, '_blank');
+        }
+
+        async function checkServerStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/google/auth-url`);
+                if (response.ok) {
+                    showResult('serverStatus', 
+                        `✅ Servidor funcionando correctamente\n` +
+                        `Puerto: 3001\n` +
+                        `Estado: ${response.status} ${response.statusText}\n` +
+                        `Timestamp: ${new Date().toLocaleString()}`, 
+                        'success'
+                    );
+                } else {
+                    showResult('serverStatus', 
+                        `⚠️ Servidor respondió con error\n` +
+                        `Estado: ${response.status} ${response.statusText}`, 
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('serverStatus', 
+                    `❌ No se puede conectar al servidor\n` +
+                    `Error: ${error.message}\n\n` +
+                    `Asegúrate de que el servidor esté ejecutándose en el puerto 3001.`, 
+                    'error'
+                );
+            }
+        }
+
+        // Verificar estado del servidor al cargar la página
+        window.onload = function() {
+            checkServerStatus();
+        };
+    </script>
+</body>
+</html>

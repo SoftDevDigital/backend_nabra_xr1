@@ -9,6 +9,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { drenvioConfig } from '../config/drenvio.config';
 import { ShipmentDimensions, ShipmentAddress, ShipmentItem } from './schemas/shipment.schema';
+import { CreateShipmentDto } from './dtos/shipping-data.dto';
 
 export interface DrEnvioShippingQuote {
   serviceId: string;
@@ -80,8 +81,6 @@ export class DrEnvioService {
     return {
       'Authorization': `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
-      'X-API-Version': 'v1',
-      'X-Client-Name': 'Nabra XR',
     };
   }
 
@@ -89,13 +88,22 @@ export class DrEnvioService {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     endpoint: string,
     data?: any,
+    retries: number = 3,
   ): Promise<T> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const config = {
+      headers: this.getHeaders(),
+      timeout: 60000, // 60 segundos para DrEnvío
+    };
+
+    this.logger.debug(`🚚 [DRENVIO] Making ${method} request to: ${url} (attempt ${4 - retries}/3)`);
+    console.log(`🚚 [DRENVIO] HTTP ${method} ${url}`, {
+      headers: config.headers,
+      dataSize: data ? JSON.stringify(data).length : 0,
+      attempt: 4 - retries
+    });
+
     try {
-      const url = `${this.baseUrl}${endpoint}`;
-      const config = {
-        headers: this.getHeaders(),
-        timeout: 30000,
-      };
 
       let response;
       switch (method) {
@@ -113,18 +121,83 @@ export class DrEnvioService {
           break;
       }
 
+      this.logger.debug(`🚚 [DRENVIO] Response received from DrEnvío API:`, {
+        status: response.status,
+        dataKeys: Object.keys(response.data || {}),
+        success: true
+      });
+      console.log(`🚚 [DRENVIO] API Response:`, {
+        status: response.status,
+        success: true,
+        data: response.data
+      });
+
       return response.data;
     } catch (error) {
-      this.logger.error(`DrEnvío API error: ${error.message}`, error.stack);
-      
+      // Errores que no deben reintentarse
       if (error.response) {
-        const { status, data } = error.response;
-        throw new BadRequestException(
-          `DrEnvío API error (${status}): ${data.message || error.message}`
-        );
+        const { status } = error.response;
+        if (status === 400 || status === 401 || status === 403 || status === 404) {
+          this.logger.error(`🚚 [DRENVIO] Non-retryable error (${status}): ${error.message}`);
+          throw this.handleApiError(error, endpoint);
+        }
       }
+
+      // Si no hay reintentos disponibles, lanzar error
+      if (retries <= 0) {
+        this.logger.error(`🚚 [DRENVIO] Max retries exceeded for ${url}`);
+        throw this.handleApiError(error, endpoint);
+      }
+
+      // Calcular delay exponencial: 1s, 2s, 4s
+      const delay = Math.pow(2, 3 - retries) * 1000;
+      this.logger.warn(`🚚 [DRENVIO] Retrying request in ${delay}ms (${retries} retries left)`);
+      console.log(`🚚 [DRENVIO] Retrying in ${delay}ms... (${retries} retries left)`);
       
-      throw new InternalServerErrorException('DrEnvío service unavailable');
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Reintentar la llamada
+      return this.makeRequest(method, endpoint, data, retries - 1);
+    }
+  }
+
+  private handleApiError(error: any, endpoint: string): BadRequestException {
+    this.logger.error(`🚚 [DRENVIO] API error: ${error.message}`, error.stack);
+    console.error(`🚚 [DRENVIO] API Error:`, {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+      url: `${this.baseUrl}${endpoint}`
+    });
+    
+    if (error.response) {
+      const { status, data } = error.response;
+      this.logger.error(`Response status: ${status}`);
+      this.logger.error(`Response data:`, JSON.stringify(data, null, 2));
+      this.logger.error(`Request URL: ${this.baseUrl}${endpoint}`);
+      
+      // Manejar diferentes tipos de errores de API
+      if (status === 400) {
+        return new BadRequestException(`DrEnvío validation error: ${data?.message || data?.error || 'Invalid request data'}`);
+      } else if (status === 401) {
+        return new BadRequestException('DrEnvío authentication error: Invalid API key');
+      } else if (status === 403) {
+        return new BadRequestException('DrEnvío authorization error: Access denied');
+      } else if (status === 404) {
+        return new BadRequestException('DrEnvío endpoint not found');
+      } else if (status >= 500) {
+        return new BadRequestException(`DrEnvío server error (${status}): Please try again later`);
+      } else {
+        return new BadRequestException(`DrEnvío API error (${status}): ${data?.message || data?.error || 'Unknown error'}`);
+      }
+    } else if (error.code === 'ECONNABORTED') {
+      return new BadRequestException('DrEnvío API timeout - please try again');
+    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return new BadRequestException('DrEnvío API unavailable - please try again later');
+    } else if (error.code === 'ETIMEDOUT') {
+      return new BadRequestException('DrEnvío API connection timeout');
+    } else {
+      return new BadRequestException(`DrEnvío API error: ${error.message}`);
     }
   }
 
@@ -165,7 +238,7 @@ export class DrEnvioService {
         services: Object.keys(drenvioConfig.services),
       };
 
-      const response = await this.makeRequest<any>('POST', '/shipping/quotes', requestData);
+      const response = await this.makeRequest<any>('POST', '/v2/shipments/rate', requestData);
 
       return this.processQuotesResponse(response, destination);
     } catch (error) {
@@ -248,6 +321,149 @@ export class DrEnvioService {
 
   // ===== CREACIÓN DE ENVÍOS =====
 
+  async generateShipmentWithDrEnvio(
+    userId: string,
+    createShipmentDto: CreateShipmentDto,
+  ): Promise<DrEnvioShipmentResponse> {
+    try {
+      this.logger.log(`🚚 [DRENVIO] Starting shipment generation for user: ${userId}, order: ${createShipmentDto.orderId}`);
+      console.log(`🚚 [DRENVIO] Starting shipment generation for user: ${userId}, order: ${createShipmentDto.orderId}`);
+
+      const { shippingData } = createShipmentDto;
+      
+      // Validar dimensiones y peso de paquetes
+      this.validatePackages(shippingData.packages);
+      
+      this.logger.log(`🚚 [DRENVIO] Shipping data received:`, {
+        carrier: shippingData.shipment.carrier,
+        service: shippingData.shipment.service,
+        price: shippingData.shipment.price,
+        packagesCount: shippingData.packages.length,
+        origin: `${shippingData.origin.city}, ${shippingData.origin.state}`,
+        destination: `${shippingData.destination.city}, ${shippingData.destination.state}`
+      });
+      console.log(`🚚 [DRENVIO] Shipping data:`, {
+        carrier: shippingData.shipment.carrier,
+        service: shippingData.shipment.service,
+        price: shippingData.shipment.price,
+        packages: shippingData.packages.length
+      });
+
+      // Convertir los datos al formato requerido por DrEnvío
+      const requestData = {
+        origin: {
+          name: shippingData.origin.name,
+          last_name: shippingData.origin.last_name || 'OPTIONAL LAST NAME',
+          company: shippingData.origin.company || 'NA',
+          email: shippingData.origin.email,
+          phone: shippingData.origin.phone,
+          street: shippingData.origin.street,
+          number: shippingData.origin.number,
+          int_number: shippingData.origin.int_number || '',
+          district: shippingData.origin.district,
+          city: shippingData.origin.city,
+          country: shippingData.origin.country,
+          reference: shippingData.origin.reference || 'NA',
+          state: shippingData.origin.state,
+          postal_code: shippingData.origin.postal_code,
+        },
+        destination: {
+          name: shippingData.destination.name,
+          last_name: shippingData.destination.last_name || 'OPTIONAL LAST NAME',
+          company: shippingData.destination.company || 'NA',
+          email: shippingData.destination.email,
+          phone: shippingData.destination.phone,
+          street: shippingData.destination.street,
+          number: shippingData.destination.number,
+          int_number: shippingData.destination.int_number || '',
+          district: shippingData.destination.district,
+          city: shippingData.destination.city,
+          country: shippingData.destination.country,
+          reference: shippingData.destination.reference || 'NA',
+          state: shippingData.destination.state,
+          postal_code: shippingData.destination.postal_code,
+        },
+        shipment: {
+          carrier: shippingData.shipment.carrier,
+          ObjectId: shippingData.shipment.ObjectId,
+          ShippingId: shippingData.shipment.ShippingId,
+          service: shippingData.shipment.service,
+          price: shippingData.shipment.price,
+          contentExplanation: shippingData.shipment.contentExplanation,
+          contentQuantity: shippingData.shipment.contentQuantity,
+          satContent: shippingData.shipment.satContent,
+        },
+        packages: shippingData.packages.map(pkg => ({
+          width: pkg.width,
+          height: pkg.height,
+          length: pkg.length,
+          weight: pkg.weight,
+          type: pkg.type,
+          name: pkg.name,
+          content: pkg.content,
+          declared_value: pkg.declared_value || 0,
+          contentQuantity: pkg.contentQuantity,
+        })),
+        service_id: shippingData.service_id,
+        insurance: shippingData.insurance,
+        carriers: shippingData.carriers,
+      };
+
+      this.logger.debug(`🚚 [DRENVIO] Sending shipment data to DrEnvío API for order: ${createShipmentDto.orderId}`);
+      console.log(`🚚 [DRENVIO] Sending request to DrEnvío API:`, {
+        url: `${this.baseUrl}/v2/shipments/generate`,
+        orderId: createShipmentDto.orderId,
+        carrier: requestData.shipment.carrier,
+        service: requestData.shipment.service,
+        packages: requestData.packages.length
+      });
+      
+      const response = await this.makeRequest<any>('POST', '/v2/shipments/generate', requestData);
+
+      // Validar respuesta de DrEnvío
+      if (!response) {
+        throw new BadRequestException('Empty response from DrEnvío API');
+      }
+
+      const shipmentId = response.shipmentId || response.id || response.shipment_id;
+      const trackingNumber = response.trackingNumber || response.tracking_number || response.tracking;
+      
+      if (!shipmentId) {
+        this.logger.error(`🚚 [DRENVIO] Missing shipment ID in response:`, response);
+        throw new BadRequestException('Invalid response from DrEnvío: missing shipment ID');
+      }
+
+      if (!trackingNumber) {
+        this.logger.warn(`🚚 [DRENVIO] Missing tracking number in response:`, response);
+      }
+
+      this.logger.log(`🚚 [DRENVIO] Shipment generated successfully for order: ${createShipmentDto.orderId}`);
+      console.log(`🚚 [DRENVIO] Shipment response received:`, {
+        orderId: createShipmentDto.orderId,
+        shipmentId,
+        trackingNumber,
+        status: response.status
+      });
+
+      return {
+        shipmentId,
+        trackingNumber: trackingNumber || 'PENDING',
+        labelUrl: response.labelUrl || response.label_url || response.label || '',
+        status: response.status || 'generated',
+        estimatedDeliveryDate: response.estimatedDeliveryDate || response.estimated_delivery_date || response.estimated_delivery || '',
+        cost: response.cost || response.price || shippingData.shipment.price,
+      };
+    } catch (error) {
+      this.logger.error(`🚚 [DRENVIO] Error generating shipment for order ${createShipmentDto.orderId}:`, error);
+      console.error(`🚚 [DRENVIO] Error generating shipment:`, {
+        orderId: createShipmentDto.orderId,
+        error: error.message,
+        stack: error.stack
+      });
+      throw error;
+    }
+  }
+
   async createShipment(request: DrEnvioShipmentRequest): Promise<DrEnvioShipmentResponse> {
     try {
       this.logger.log(`Creating shipment with DrEnvío: ${request.service}`);
@@ -256,41 +472,80 @@ export class DrEnvioService {
       this.validateShipmentRequest(request);
 
       const requestData = {
-        service: request.service,
-        origin: this.formatAddress(request.origin),
-        destination: this.formatAddress(request.destination),
-        package: {
-          weight: request.dimensions.weight,
-          length: request.dimensions.length,
-          width: request.dimensions.width,
-          height: request.dimensions.height,
-          declaredValue: request.totalValue,
+        origin: {
+          name: request.origin.name || drenvioConfig.companyInfo.name,
+          last_name: 'OPTIONAL LAST NAME',
+          company: drenvioConfig.companyInfo.name,
+          email: drenvioConfig.companyInfo.contact.email,
+          phone: request.origin.phone || drenvioConfig.companyInfo.contact.phone,
+          street: request.origin.street,
+          number: '123',
+          int_number: '2',
+          district: request.origin.neighborhood || 'Colonia del Valle',
+          city: request.origin.city,
+          country: 'MX', // Siempre MX según documentación
+          reference: 'Centro de distribución',
+          state: request.origin.state,
+          postal_code: request.origin.postalCode,
         },
-        items: request.items.map(item => ({
-          name: item.name,
-          quantity: item.quantity,
-          value: item.value,
-          sku: item.sku,
-          description: item.description,
-        })),
-        options: {
-          requiresSignature: request.requiresSignature || false,
-          fragile: request.fragile || false,
-          insured: request.insured || false,
-          specialInstructions: request.specialInstructions,
+        destination: {
+          name: request.destination.name || 'Cliente',
+          last_name: 'OPTIONAL LAST NAME',
+          company: request.destination.name || 'Cliente',
+          email: 'cliente@example.com',
+          phone: request.destination.phone || '0000000000',
+          street: request.destination.street,
+          number: '456',
+          int_number: '',
+          district: request.destination.neighborhood || 'Roma Norte',
+          city: request.destination.city,
+          country: 'MX', // Siempre MX según documentación
+          reference: 'Dirección de envío',
+          state: request.destination.state,
+          postal_code: request.destination.postalCode,
         },
-        webhookUrl: `${drenvioConfig.webhooks.baseUrl}${drenvioConfig.webhooks.endpoints.statusUpdate}`,
+        shipment: {
+          carrier: request.service.split('_')[0] || 'fedex', // Extraer carrier del serviceId
+          ObjectId: 'code',
+          ShippingId: request.service, // Usar el serviceId completo como ShippingId
+          service: request.service.split('_')[2] || 'ground', // Extraer service del serviceId
+          price: request.totalValue * 0.1, // Calcular precio basado en valor
+          contentExplanation: request.items.map(item => item.name).join(', '),
+          contentQuantity: request.items.reduce((total, item) => total + item.quantity, 0),
+          satContent: '31181701',
+        },
+        packages: [
+          {
+            width: request.dimensions.width,
+            height: request.dimensions.height,
+            length: request.dimensions.length,
+            weight: request.dimensions.weight,
+            type: 'box',
+            name: 'Paquete de envío',
+            content: 'ORNAMENTOS O DECORACIONES',
+            declared_value: request.totalValue,
+            contentQuantity: request.items.reduce((total, item) => total + item.quantity, 0),
+          }
+        ],
+        service_id: request.service, // CRÍTICO: Usar el serviceId real de la tarifa seleccionada
+        insurance: request.insured ? 100 : 0,
+        carriers: [request.service.split('_')[0] || 'fedex'], // Usar el carrier del serviceId
       };
 
-      const response = await this.makeRequest<any>('POST', '/shipments', requestData);
+      // Logs reducidos para evitar spam en consola
+      this.logger.debug(`Creating shipment: ${request.service} to ${request.destination.city}`);
+      
+      const response = await this.makeRequest<any>('POST', '/v2/shipments/generate', requestData);
+
+      this.logger.debug(`Shipment response received`);
 
       return {
-        shipmentId: response.shipmentId,
-        trackingNumber: response.trackingNumber,
-        labelUrl: response.labelUrl,
+        shipmentId: response.shipmentId || response.id,
+        trackingNumber: response.trackingNumber || response.tracking_number,
+        labelUrl: response.labelUrl || response.label_url,
         status: response.status,
-        estimatedDeliveryDate: response.estimatedDeliveryDate,
-        cost: response.cost,
+        estimatedDeliveryDate: response.estimatedDeliveryDate || response.estimated_delivery_date,
+        cost: response.cost || response.price,
       };
     } catch (error) {
       this.logger.error('Error creating shipment:', error);
@@ -306,7 +561,7 @@ export class DrEnvioService {
 
       const response = await this.makeRequest<any>(
         'GET',
-        `/tracking/${trackingNumber}`
+        `/v2/tracking/${trackingNumber}`
       );
 
       return {
@@ -468,5 +723,175 @@ export class DrEnvioService {
         zone: this.getZoneByPostalCode(address.postalCode),
       };
     }
+  }
+
+  // ===== MÉTODO DE PRUEBA =====
+
+  async testHardcodedShipment(): Promise<any> {
+    try {
+      this.logger.log('🧪 [TEST] Starting hardcoded DrEnvío shipment test');
+      console.log('🧪 [TEST] Testing DrEnvío API with hardcoded data...');
+
+      // Datos hardcodeados para prueba
+      const testShipmentData = {
+        origin: {
+          name: 'Nabra Store',
+          last_name: 'XR',
+          company: 'Nabra',
+          email: 'contact@nabraxr.com',
+          phone: '+525512345678',
+          street: 'Callejón 6 de Mayo',
+          number: '150',
+          int_number: '',
+          district: 'Centro',
+          city: 'Tlajomulco de Zúñiga',
+          country: 'MX',
+          reference: 'Almacén Nabra',
+          state: 'JAL',
+          postal_code: '45646',
+        },
+        destination: {
+          name: 'Juan Pérez',
+          last_name: 'García',
+          company: 'NA',
+          email: 'cliente@example.com',
+          phone: '+525598765432',
+          street: 'Av. Revolución',
+          number: '234',
+          int_number: 'Depto 5B',
+          district: 'San Ángel',
+          city: 'Ciudad de México',
+          country: 'MX',
+          reference: 'Edificio azul, portón negro',
+          state: 'CDMX',
+          postal_code: '01000',
+        },
+        shipment: {
+          carrier: 'fedex',
+          ObjectId: 'code',
+          ShippingId: 'fedex_mx_ground',
+          service: 'ground',
+          price: 250,
+          contentExplanation: 'Productos de realidad virtual',
+          contentQuantity: 2,
+          satContent: '31181701', // Código SAT para accesorios electrónicos
+        },
+        packages: [
+          {
+            width: 30,
+            height: 20,
+            length: 40,
+            weight: 2.5,
+            type: 'box',
+            name: 'Paquete de prueba',
+            content: 'ORNAMENTOS O DECORACIONES',
+            declared_value: 1500,
+            contentQuantity: 2,
+          }
+        ],
+        service_id: 'fedex_mx_ground',
+        insurance: 0,
+        carriers: ['fedex'],
+      };
+
+      this.logger.log('🧪 [TEST] Test data prepared:', {
+        origin: `${testShipmentData.origin.city}, ${testShipmentData.origin.state}`,
+        destination: `${testShipmentData.destination.city}, ${testShipmentData.destination.state}`,
+        carrier: testShipmentData.shipment.carrier,
+        service: testShipmentData.shipment.service,
+        packages: testShipmentData.packages.length,
+      });
+
+      console.log('🧪 [TEST] Sending test request to DrEnvío API...');
+      console.log('🧪 [TEST] API URL:', `${this.baseUrl}/v2/shipments/generate`);
+
+      // Hacer la llamada a DrEnvío
+      const response = await this.makeRequest<any>(
+        'POST',
+        '/v2/shipments/generate',
+        testShipmentData
+      );
+
+      this.logger.log('🧪 [TEST] DrEnvío response received successfully');
+      console.log('🧪 [TEST] Response:', {
+        shipmentId: response.shipmentId || response.id,
+        trackingNumber: response.trackingNumber || response.tracking_number,
+        status: response.status,
+        labelUrl: response.labelUrl || response.label_url,
+      });
+
+      return {
+        success: true,
+        message: 'Test shipment created successfully',
+        request: testShipmentData,
+        response: {
+          shipmentId: response.shipmentId || response.id,
+          trackingNumber: response.trackingNumber || response.tracking_number,
+          labelUrl: response.labelUrl || response.label_url,
+          status: response.status,
+          estimatedDeliveryDate: response.estimatedDeliveryDate || response.estimated_delivery_date,
+          cost: response.cost || response.price,
+          fullResponse: response,
+        },
+      };
+    } catch (error) {
+      this.logger.error('🧪 [TEST] Error in hardcoded shipment test:', error);
+      console.error('🧪 [TEST] Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+
+      return {
+        success: false,
+        message: 'Test shipment failed',
+        error: error.message,
+        errorDetails: error.response?.data || error,
+      };
+    }
+  }
+
+  // ===== ESTADO DEL SERVICIO =====
+
+  async getServiceStatus(): Promise<any> {
+    try {
+      return {
+        status: 'operational',
+        apiUrl: this.baseUrl,
+        environment: drenvioConfig.environment,
+        hasApiKey: !!this.apiKey,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+
+  // ===== VALIDAR PAQUETES =====
+
+  private validatePackages(packages: any[]): void {
+    if (!packages || packages.length === 0) {
+      throw new BadRequestException('At least one package is required');
+    }
+
+    packages.forEach((pkg, index) => {
+      if (!pkg.width || !pkg.height || !pkg.length || !pkg.weight) {
+        throw new BadRequestException(`Package ${index + 1} is missing required dimensions`);
+      }
+
+      if (pkg.weight > drenvioConfig.limits.maxPackageWeight) {
+        throw new BadRequestException(`Package ${index + 1} exceeds maximum weight: ${drenvioConfig.limits.maxPackageWeight}kg`);
+      }
+
+      if (pkg.length > drenvioConfig.limits.maxDimension || 
+          pkg.width > drenvioConfig.limits.maxDimension || 
+          pkg.height > drenvioConfig.limits.maxDimension) {
+        throw new BadRequestException(`Package ${index + 1} exceeds maximum dimensions: ${drenvioConfig.limits.maxDimension}cm`);
+      }
+    });
   }
 }

@@ -7,55 +7,106 @@ import {
   Param,
   Request,
   Query,
+  Res,
   HttpStatus,
   HttpCode,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
+import { Public } from '../common/decorators/public.decorator';
 import { CreatePaymentDto } from './dtos/create-payment.dto';
 import { PaymentCaptureDto } from './dtos/payment-response.dto';
 import { PartialCheckoutDto } from './dtos/partial-checkout.dto';
-import { Public } from '../common/decorators/public.decorator';
+import { PaymentWithShippingDto } from './dtos/payment-with-shipping.dto';
+import { CheckoutWithShippingDto } from './dtos/checkout-with-shipping.dto';
+import { MercadoPagoService } from './mercadopago.service';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Payments')
+@ApiBearerAuth('bearer')
 @Controller('payments')
 export class PaymentsController {
-  constructor(private paymentsService: PaymentsService) {}
+  private readonly logger = new Logger(PaymentsController.name);
 
-  // Endpoint deprecated - use /payments/mercadopago/checkout instead
-  // @Post('from-cart')
-  // @HttpCode(HttpStatus.CREATED)
-  // async createPaymentFromCart(
-  //   @Request() req,
-  //   @Query('returnUrl') returnUrl?: string,
-  //   @Query('cancelUrl') cancelUrl?: string,
-  // ) {
-  //   return this.paymentsService.createPaymentFromCart(
-  //     req.user.userId,
-  //     returnUrl,
-  //     cancelUrl,
-  //   );
-  // }
+  constructor(
+    private paymentsService: PaymentsService,
+    private mpService: MercadoPagoService,
+  ) {}
 
-  @Post('partial-checkout')
+
+  // Mercado Pago Checkout Pro
+  @ApiOperation({ summary: 'Checkout Pro (MP)', description: 'Crea preferencia de pago en Mercado Pago Checkout Pro. Incluye automáticamente costo de envío si se proporcionan datos de envío.' })
+  @ApiBody({ type: CheckoutWithShippingDto, required: false })
+  @Post('mercadopago/checkout')
   @HttpCode(HttpStatus.CREATED)
-  async createPartialPaymentFromCart(
+  async createMpCheckout(
+    @Request() req,
+    @Body() checkoutData?: CheckoutWithShippingDto,
+  ) {
+    return this.paymentsService.createMercadoPagoCheckoutFromCart(
+      req.user.userId,
+      checkoutData || {},
+    );
+  }
+
+  @ApiOperation({ summary: 'Checkout Pro parcial (MP)', description: 'Preferencia de pago parcial en Mercado Pago.' })
+  @ApiBody({ type: PartialCheckoutDto })
+  @Post('mercadopago/partial-checkout')
+  @HttpCode(HttpStatus.CREATED)
+  async createMpPartialCheckout(
     @Request() req,
     @Body() partialCheckoutDto: PartialCheckoutDto,
   ) {
-    return this.paymentsService.createPartialPaymentFromCart(
+    return this.paymentsService.createMercadoPagoPartialCheckoutFromCart(
       req.user.userId,
       partialCheckoutDto,
     );
   }
 
-  @Post('webhook/paypal')
+
+  @ApiOperation({ summary: 'Webhook Mercado Pago', description: 'Recibe notificaciones de Mercado Pago. Debe validar encabezados `x-signature` y `x-request-id`. El body puede incluir `id`/`type` o `resource`. Frontend no llama este endpoint.' })
+  @Post('webhook/mercadopago')
+  @Public()
   @HttpCode(HttpStatus.OK)
-  async paypalWebhook(@Body() webhookData: any) {
-    // Implementar manejo de eventos (completed/failed/cancelled/etc.)
-    console.log('PayPal webhook received:', webhookData);
-    return { status: 'received' };
+  async mercadoPagoWebhook(@Query() query: any, @Body() body: any, @Request() req: any) {
+    // MP puede enviar query params (type=data.id/topic) y body con resource
+    const headers = {
+      'x-signature': req.headers['x-signature'],
+      'x-request-id': req.headers['x-request-id'],
+      'user-agent': req.headers['user-agent'],
+    };
+    return this.paymentsService.handleMercadoPagoWebhook(query, body, headers);
   }
 
+  @ApiOperation({ summary: 'Return URL (MP)', description: 'Redirección desde MP. Frontend debe leer `url` en respuesta para redirigir (en este backend devolvemos un objeto con `statusCode: 302` y `url`).' })
+  @ApiQuery({ name: 'payment_id', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'merchant_order_id', required: false })
+  @ApiQuery({ name: 'external_reference', required: false })
+  @Get('mercadopago/return')
+  @Public()
+  async mercadoPagoReturn(
+    @Query('payment_id') paymentId?: string,
+    @Query('status') status?: string,
+    @Query('merchant_order_id') merchantOrderId?: string,
+    @Query('external_reference') externalReference?: string,
+    @Request() req?: any,
+    @Res() res?: any,
+  ) {
+    const result = await this.paymentsService.handleMercadoPagoReturn({
+      paymentId,
+      status,
+      merchantOrderId,
+      externalReference,
+    });
+    // Redirigir al frontend
+    return res.redirect(result.redirectUrl);
+  }
+
+  @ApiOperation({ summary: 'Listar mis pagos', description: 'Devuelve pagos del usuario autenticado con paginación.' })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'offset', required: false })
   @Get()
   async getUserPayments(
     @Request() req,
@@ -79,36 +130,4 @@ export class PaymentsController {
     );
   }
 
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  async createPayment(
-    @Request() req,
-    @Body() createPaymentDto: CreatePaymentDto,
-  ) {
-    return this.paymentsService.createPayment(req.user.userId, createPaymentDto);
-  }
-
-  @Post(':paymentId/capture')
-  @HttpCode(HttpStatus.OK)
-  async capturePayment(
-    @Param('paymentId') paymentId: string,
-    @Body() captureDto: PaymentCaptureDto,
-  ) {
-    return this.paymentsService.capturePayment(paymentId, captureDto.payerId);
-  }
-
-  @Get(':paymentId')
-  async getPayment(@Param('paymentId') paymentId: string) {
-    return this.paymentsService.getPayment(paymentId);
-  }
-
-  @Delete(':paymentId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async cancelPayment(@Param('paymentId') paymentId: string) {
-    const success = await this.paymentsService.cancelPayment(paymentId);
-    if (!success) {
-      throw new BadRequestException('Failed to cancel payment');
-    }
-    // 204 No Content → sin body
-  }
 }

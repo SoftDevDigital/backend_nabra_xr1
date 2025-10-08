@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { User, UserSchema } from './schemas/user.schema';
+import { GoogleUser, GoogleUserSchema } from './google/schemas/google-user.schema';
 import { GoogleAuthModule } from './google/google-auth.module';
 
 @Module({
@@ -20,7 +21,10 @@ import { GoogleAuthModule } from './google/google-auth.module';
       }),
       inject: [ConfigService],
     }),
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    MongooseModule.forFeature([
+      { name: User.name, schema: UserSchema },
+      { name: GoogleUser.name, schema: GoogleUserSchema },
+    ]),
     GoogleAuthModule, // Incluir módulo de Google OAuth
   ],
   controllers: [AuthController],

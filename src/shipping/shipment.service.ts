@@ -237,7 +237,7 @@ export class ShipmentService {
       city: 'Buenos Aires',
       state: 'CABA',
       postalCode: '1043',
-      country: 'Argentina',
+      country: 'Mexico',
     };
 
     // Preparar items del envío

@@ -20,7 +20,10 @@ import { Review } from '../reviews/schemas/review.schema';
 import { Promotion } from '../promotions/schemas/promotion.schema';
 import { Coupon } from '../promotions/schemas/coupon.schema';
 import { Roles } from '../common/decorators/roles.decorator';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Admin')
+@ApiBearerAuth('bearer')
 @Controller('admin')
 @Roles('admin')
 export class AdminSimpleController {
@@ -36,6 +39,7 @@ export class AdminSimpleController {
 
   // ===== DASHBOARD PRINCIPAL =====
 
+  @ApiOperation({ summary: 'Dashboard', description: 'Métricas generales del panel admin (usuarios, órdenes, ingresos, etc.).' })
   @Get('dashboard')
   async getDashboard() {
     try {
@@ -86,6 +90,11 @@ export class AdminSimpleController {
 
   // ===== GESTIÓN DE PRODUCTOS =====
 
+  @ApiOperation({ summary: 'Listar productos', description: 'Listado de productos con filtros y paginación.' })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'category', required: false })
+  @ApiQuery({ name: 'search', required: false })
   @Get('products')
   async getProducts(@Query() query: any) {
     const limit = Math.min(parseInt(query.limit) || 20, 100);
@@ -103,6 +112,7 @@ export class AdminSimpleController {
     return { products, total, limit, offset };
   }
 
+  @ApiOperation({ summary: 'Stock bajo', description: 'Productos con stock por debajo del umbral.' })
   @Get('products/low-stock')
   async getLowStockProducts() {
     return this.productModel.find({
@@ -110,6 +120,8 @@ export class AdminSimpleController {
     }).sort({ stock: 1 }).exec();
   }
 
+  @ApiOperation({ summary: 'Actualizar stock', description: 'Actualiza el stock de un producto.' })
+  @ApiParam({ name: 'productId', description: 'ID del producto' })
   @Put('products/:productId/stock')
   async updateProductStock(
     @Param('productId') productId: string,
@@ -124,6 +136,8 @@ export class AdminSimpleController {
     return { success: true, product };
   }
 
+  @ApiOperation({ summary: 'Alternar destacado', description: 'Alterna el flag de destacado de un producto.' })
+  @ApiParam({ name: 'productId', description: 'ID del producto' })
   @Put('products/:productId/toggle-featured')
   async toggleProductFeatured(@Param('productId') productId: string) {
     const product = await this.productModel.findById(productId);
@@ -139,6 +153,11 @@ export class AdminSimpleController {
 
   // ===== GESTIÓN DE USUARIOS =====
 
+  @ApiOperation({ summary: 'Listar usuarios', description: 'Obtiene usuarios con filtros y paginación.' })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'role', required: false })
+  @ApiQuery({ name: 'search', required: false })
   @Get('users')
   async getUsers(@Query() query: any) {
     const limit = Math.min(parseInt(query.limit) || 20, 100);
@@ -161,6 +180,8 @@ export class AdminSimpleController {
     return { users, total, limit, offset };
   }
 
+  @ApiOperation({ summary: 'Órdenes de usuario', description: 'Lista las órdenes de un usuario.' })
+  @ApiParam({ name: 'userId', description: 'ID del usuario' })
   @Get('users/:userId/orders')
   async getUserOrders(@Param('userId') userId: string) {
     const orders = await this.orderModel
@@ -189,6 +210,11 @@ export class AdminSimpleController {
 
   // ===== GESTIÓN DE ÓRDENES =====
 
+  @ApiOperation({ summary: 'Listar órdenes', description: 'Listado de órdenes con filtros y paginación.' })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'dateFrom', required: false })
   @Get('orders')
   async getOrders(@Query() query: any) {
     const limit = Math.min(parseInt(query.limit) || 20, 100);
@@ -215,6 +241,8 @@ export class AdminSimpleController {
     return { orders, total, limit, offset };
   }
 
+  @ApiOperation({ summary: 'Actualizar estado de orden', description: 'Actualiza el estado de una orden.' })
+  @ApiParam({ name: 'orderId', description: 'ID de la orden' })
   @Put('orders/:orderId/status')
   async updateOrderStatus(
     @Param('orderId') orderId: string,
@@ -237,6 +265,7 @@ export class AdminSimpleController {
 
   // ===== GESTIÓN DE RESEÑAS =====
 
+  @ApiOperation({ summary: 'Reseñas pendientes', description: 'Listado de reseñas pendientes de moderación.' })
   @Get('reviews/pending')
   async getPendingReviews() {
     return this.reviewModel
@@ -248,6 +277,8 @@ export class AdminSimpleController {
       .exec();
   }
 
+  @ApiOperation({ summary: 'Moderar reseña', description: 'Actualiza el estado de moderación de una reseña.' })
+  @ApiParam({ name: 'reviewId', description: 'ID de la reseña' })
   @Put('reviews/:reviewId/moderate')
   async moderateReview(
     @Param('reviewId') reviewId: string,
@@ -274,6 +305,7 @@ export class AdminSimpleController {
 
   // ===== ESTADÍSTICAS RÁPIDAS =====
 
+  @ApiOperation({ summary: 'Estadísticas rápidas', description: 'KPIs rápidos para el panel admin.' })
   @Get('stats/quick')
   async getQuickStats() {
     try {
@@ -343,6 +375,7 @@ export class AdminSimpleController {
 
   // ===== GESTIÓN DE PROMOCIONES =====
 
+  @ApiOperation({ summary: 'Listar promociones', description: 'Listado paginado de promociones.' })
   @Get('promotions')
   async getPromotions(@Query() query: any) {
     const limit = Math.min(parseInt(query.limit) || 20, 100);
@@ -360,6 +393,8 @@ export class AdminSimpleController {
     return { promotions, total, limit, offset };
   }
 
+  @ApiOperation({ summary: 'Obtener promoción', description: 'Detalle de una promoción por ID.' })
+  @ApiParam({ name: 'promotionId', description: 'ID de la promoción' })
   @Get('promotions/:promotionId')
   async getPromotionById(@Param('promotionId') promotionId: string) {
     const promotion = await this.promotionModel.findById(promotionId);
@@ -369,6 +404,8 @@ export class AdminSimpleController {
     return promotion;
   }
 
+  @ApiOperation({ summary: 'Cambiar estado de promoción', description: 'Actualiza el estado de una promoción.' })
+  @ApiParam({ name: 'promotionId', description: 'ID de la promoción' })
   @Put('promotions/:promotionId/status')
   async changePromotionStatus(
     @Param('promotionId') promotionId: string,
@@ -389,6 +426,7 @@ export class AdminSimpleController {
     return { success: true, promotion };
   }
 
+  @ApiOperation({ summary: 'Listar cupones', description: 'Listado de cupones con filtros.' })
   @Get('coupons')
   async getCoupons(@Query() query: any) {
     const limit = Math.min(parseInt(query.limit) || 20, 100);
@@ -412,6 +450,7 @@ export class AdminSimpleController {
     return { coupons, total, limit, offset };
   }
 
+  @ApiOperation({ summary: 'Resumen de promociones', description: 'Resumen de uso y descuentos entregados.' })
   @Get('promotions/stats/summary')
   async getPromotionStatsSummary() {
     try {

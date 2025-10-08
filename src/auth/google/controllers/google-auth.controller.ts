@@ -23,7 +23,9 @@ import { JwtService } from '@nestjs/jwt';
 import { googleAuthConfig } from '../google-auth.config';
 import { GoogleAuthUrlResponseDto, GoogleUserResponseDto, GoogleLinkResponseDto } from '../dtos/google-auth-response.dto';
 import { Public } from '../../../common/decorators/public.decorator';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Auth - Google')
 @Controller('auth/google')
 export class GoogleAuthController {
   private readonly logger = new Logger(GoogleAuthController.name);
@@ -35,16 +37,18 @@ export class GoogleAuthController {
 
   // ===== INICIO DE SESIÓN CON GOOGLE =====
 
-  @Public()
+  @ApiOperation({ summary: 'Login con Google (redirect)', description: 'Redirige a Google OAuth para iniciar el flujo de autenticación.' })
   @Get()
+  @Public()
   @UseGuards(AuthGuard('google'))
   async googleAuth(@Req() req: Request) {
     // Este endpoint redirige a Google OAuth
     // La lógica se maneja en la estrategia de Google
   }
 
-  @Public()
+  @ApiOperation({ summary: 'Callback de Google', description: 'Procesa el callback de Google, genera JWT y redirige al frontend con token y datos.' })
   @Get('callback')
+  @Public()
   @UseGuards(AuthGuard('google'))
   async googleAuthCallback(@Req() req: Request, @Res() res: Response) {
     try {
@@ -52,17 +56,24 @@ export class GoogleAuthController {
 
       if (!user) {
         this.logger.error('No user data received from Google OAuth');
-        return res.redirect(`https://nabra.mx/login?error=no_user_data`);
+        return res.redirect(`${googleAuthConfig.failureRedirect}?error=no_user_data`);
       }
 
       // Generar JWT token
+      // Validación de secreto JWT para evitar errores y bucles de redirección
+      if (!googleAuthConfig.jwtSecret) {
+        this.logger.error('JWT secret is missing. Set JWT_SECRET in environment variables.');
+        return res.redirect(`${googleAuthConfig.failureRedirect}?error=missing_jwt_secret`);
+      }
+
+      // Emitir JWT unificado con identidad tradicional (sub => User._id)
       const payload = {
         sub: user._id,
         email: user.email,
         name: user.name,
         googleId: user.googleId,
         isGoogleUser: true,
-        linkedUserId: user.linkedUserId,
+        linkedUserId: user.linkedUserId || user._id,
       };
 
       const accessToken = this.jwtService.sign(payload, {
@@ -88,24 +99,26 @@ export class GoogleAuthController {
         lastName: user.lastName,
         avatarUrl: user.avatarUrl,
         isGoogleUser: true,
-        linkedUserId: user.linkedUserId,
+        linkedUserId: user.linkedUserId || user._id,
       };
 
-      // Crear URL con parámetros para el frontend - HARDCODED
-      const redirectUrl = `https://nabra.mx/perfil?token=${accessToken}&user=${encodeURIComponent(JSON.stringify(userData))}&login=success`;
+      // Crear URL con parámetros para el frontend
+      const redirectUrl = `${googleAuthConfig.successRedirect}?token=${accessToken}&user=${encodeURIComponent(JSON.stringify(userData))}&login=success`;
 
       return res.redirect(redirectUrl);
 
     } catch (error) {
       this.logger.error(`Google OAuth callback error: ${error.message}`, error.stack);
-      return res.redirect(`https://nabra.mx/login?error=server_error`);
+      return res.redirect(`${googleAuthConfig.failureRedirect}?error=server_error`);
     }
   }
 
   // ===== OBTENER URL DE AUTENTICACIÓN =====
 
-  @Public()
+  @ApiOperation({ summary: 'Obtener URL de auth Google', description: 'Devuelve la URL de autorización de Google para construir un enlace desde frontend.' })
+  @ApiQuery({ name: 'state', required: false, description: 'Valor opaco para mantener estado en el flujo' })
   @Get('auth-url')
+  @Public()
   async getAuthUrl(@Query('state') state?: string): Promise<GoogleAuthUrlResponseDto> {
     try {
       const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
@@ -127,6 +140,8 @@ export class GoogleAuthController {
 
   // ===== GESTIÓN DE PERFIL =====
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Perfil Google', description: 'Devuelve el perfil del usuario autenticado con GoogleAuthGuard.' })
   @Get('profile')
   @UseGuards(GoogleAuthGuard)
   async getProfile(@Req() req: Request): Promise<GoogleUserResponseDto> {
@@ -158,6 +173,8 @@ export class GoogleAuthController {
 
   // ===== VINCULAR CON USUARIO TRADICIONAL =====
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Vincular cuenta Google', description: 'Vincula una cuenta de Google a un usuario tradicional. Requiere token válido.' })
   @Post('link')
   @UseGuards(GoogleAuthGuard)
   async linkToTraditionalUser(
@@ -203,6 +220,8 @@ export class GoogleAuthController {
     }
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Desvincular cuenta Google', description: 'Desvincula la cuenta Google del usuario tradicional.' })
   @Post('unlink')
   @UseGuards(GoogleAuthGuard)
   async unlinkFromTraditionalUser(@Req() req: Request): Promise<GoogleLinkResponseDto> {
@@ -240,6 +259,8 @@ export class GoogleAuthController {
 
   // ===== GESTIÓN DE PERFIL COMPLETO =====
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Perfil completo', description: 'Devuelve perfil extendido del usuario de Google, con preferencias y datos adicionales.' })
   @Get('profile/complete')
   @UseGuards(GoogleAuthGuard)
   async getCompleteProfile(@Req() req: Request) {
@@ -289,6 +310,8 @@ export class GoogleAuthController {
     }
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Actualizar perfil Google', description: 'Actualiza el perfil almacenado para el usuario de Google.' })
   @Put('profile')
   @UseGuards(GoogleAuthGuard)
   async updateProfile(
@@ -337,6 +360,8 @@ export class GoogleAuthController {
 
   // ===== GESTIÓN DE DIRECCIONES =====
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Agregar dirección', description: 'Agrega una dirección para el usuario Google. Si es la primera, queda como default.' })
   @Post('addresses')
   @UseGuards(GoogleAuthGuard)
   async addAddress(
@@ -378,6 +403,8 @@ export class GoogleAuthController {
     }
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Actualizar dirección', description: 'Actualiza una dirección existente. Si se marca como default, desmarca las demás.' })
   @Put('addresses/:addressId')
   @UseGuards(GoogleAuthGuard)
   async updateAddress(
@@ -418,6 +445,8 @@ export class GoogleAuthController {
     }
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Eliminar dirección', description: 'Elimina una dirección y ajusta default si corresponde.' })
   @Delete('addresses/:addressId')
   @UseGuards(GoogleAuthGuard)
   async deleteAddress(
@@ -456,6 +485,8 @@ export class GoogleAuthController {
 
   // ===== ACTUALIZAR PREFERENCIAS =====
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Actualizar preferencias', description: 'Actualiza preferencias del usuario de Google.' })
   @Post('preferences')
   @UseGuards(GoogleAuthGuard)
   async updatePreferences(
@@ -480,6 +511,8 @@ export class GoogleAuthController {
 
   // ===== LOGOUT =====
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Logout Google', description: 'Finaliza sesión (a nivel frontend) para usuario Google.' })
   @Post('logout')
   @UseGuards(GoogleAuthGuard)
   async logout(@Req() req: Request): Promise<{ message: string }> {
@@ -499,6 +532,8 @@ export class GoogleAuthController {
 
   // ===== ESTADÍSTICAS (Solo para desarrollo/testing) =====
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Estadísticas (dev)', description: 'Estadísticas internas para desarrollo.' })
   @Get('stats')
   @UseGuards(GoogleAuthGuard)
   async getStats(@Req() req: Request) {

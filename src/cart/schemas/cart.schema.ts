@@ -25,6 +25,7 @@ export class Cart extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: User;
+
 }
 
 export const CartSchema = SchemaFactory.createForClass(Cart);

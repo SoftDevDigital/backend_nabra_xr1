@@ -13,6 +13,7 @@ import { ProfileService } from '../users/profile.service';
 import { ProductsService } from '../products/products.service';
 import { CartService } from '../cart/cart.service';
 import { drenvioConfig } from '../config/drenvio.config';
+import { ShippingDataCaptureDto, ShippingCalculationResponseDto } from './dtos/shipping-data.dto';
 
 export interface ShippingCalculationRequest {
   userId: string;
@@ -25,7 +26,7 @@ export interface ShippingCalculationRequest {
     name: string;
     weight: number; // kg
     dimensions: { length: number; width: number; height: number }; // cm
-    value: number; // ARS
+    value: number; // MXN
     quantity: number;
   }>;
 }
@@ -163,6 +164,52 @@ export class ShippingCalculatorService {
       addressId,
       cartItems,
     });
+  }
+
+  // ===== CAPTURA DE DATOS DE ENVÍO Y CÁLCULO =====
+
+  async captureShippingDataAndCalculate(
+    userId: string,
+    shippingData: ShippingDataCaptureDto,
+  ): Promise<ShippingCalculationResponseDto> {
+    try {
+      this.logger.log(`Capturing shipping data and calculating total for user: ${userId}`);
+
+      // 1. Obtener carrito del usuario
+      const cart = await this.cartService.getCart(userId);
+      
+      if (!cart.items || cart.items.length === 0) {
+        throw new BadRequestException('Cart is empty');
+      }
+
+      // 2. Calcular total del carrito
+      let cartTotal = 0;
+      const currency = process.env.MERCADOPAGO_CURRENCY || 'MXN';
+      
+      for (const item of cart.items) {
+        const product = item.product as any;
+        cartTotal += product.price * item.quantity;
+      }
+
+      // 3. Usar el precio de envío del objeto recibido
+      const shippingCost = shippingData.shipment.price;
+
+      // 4. Calcular total final
+      const totalAmount = cartTotal + shippingCost;
+
+      this.logger.log(`Cart total: ${cartTotal}, Shipping: ${shippingCost}, Total: ${totalAmount}`);
+
+      return {
+        cartTotal: Math.round(cartTotal * 100) / 100,
+        shippingCost: Math.round(shippingCost * 100) / 100,
+        totalAmount: Math.round(totalAmount * 100) / 100,
+        currency,
+        shippingData,
+      };
+    } catch (error) {
+      this.logger.error('Error capturing shipping data and calculating total:', error);
+      throw error;
+    }
   }
 
   // ===== MÉTODOS AUXILIARES =====

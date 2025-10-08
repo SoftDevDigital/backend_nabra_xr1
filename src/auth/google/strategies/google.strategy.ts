@@ -124,17 +124,25 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         this.logger.log(`Google OAuth successful for user: ${googleUser.email}`);
       }
 
-      // Retornar datos del usuario para JWT
-      const userPayload = {
-        _id: googleUser._id,
-        googleId: googleUser.googleId,
+      // Unificar identidad: crear o buscar User tradicional y vincular
+      const user = await this.googleUserService.getOrCreateTraditionalUserFromGoogle({
         email: googleUser.email,
-        name: googleUser.displayName || googleUser.firstName,
         firstName: googleUser.firstName,
         lastName: googleUser.lastName,
+      });
+      await this.googleUserService.ensureGoogleLinkedToTraditional((googleUser._id as any).toString(), (user._id as any).toString());
+
+      // Retornar payload basado en User tradicional, marcando que proviene de Google
+      const userPayload = {
+        _id: user._id,
+        email: user.email,
+        name: googleUser.displayName || googleUser.firstName,
+        firstName: googleUser.firstName || user.firstName,
+        lastName: googleUser.lastName || user.lastName,
         avatarUrl: googleUser.avatarUrl,
         isGoogleUser: true,
-        linkedUserId: googleUser.linkedUserId,
+        googleId: googleUser.googleId,
+        linkedUserId: user._id,
       };
 
       return done(null, userPayload);

@@ -3,33 +3,103 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Product } from './schemas/product.schema';
 import { CreateProductDto } from './dtos/create-product.dto';
 import { UpdateProductDto } from './dtos/update-product.dto';
+import { SimplePromotionsService } from '../promotions/simple-promotions.service';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(
     @InjectModel(Product.name) private productModel: Model<Product>,
+    @Inject(forwardRef(() => SimplePromotionsService)) 
+    private promotionsService: SimplePromotionsService,
   ) {}
 
-  async findAll(query: any): Promise<Product[]> {
-    const { page = 1, limit = 10, category, minPrice, maxPrice } = query;
+  async findAll(query: any): Promise<{ products: Product[]; total: number; page: number; totalPages: number }> {
+    const { 
+      page = 1, 
+      limit = 12, 
+      category, 
+      search,
+      minPrice, 
+      maxPrice, 
+      sortBy = 'createdAt', 
+      sortOrder = 'desc',
+      isFeatured,
+      isPreorder,
+      size
+    } = query;
+    
     const skip = (page - 1) * limit;
     const filter: any = {};
-    if (category) filter.category = category;
-    if (minPrice) filter.price = { $gte: minPrice };
-    if (maxPrice) filter.price = { ...filter.price, $lte: maxPrice };
 
-    return this.productModel
-      .find(filter)
-      .skip(skip)
-      .limit(limit)
-      .sort({ createdAt: -1 })
-      .exec();
+    // Filtro por categoría (insensible a mayúsculas)
+    if (category) {
+      filter.category = { $regex: new RegExp(category, 'i') };
+    }
+
+    // Búsqueda de texto
+    if (search) {
+      filter.$text = { $search: search };
+    }
+
+    // Filtros de precio
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
+
+    // Filtros booleanos
+    if (isFeatured !== undefined) {
+      filter.isFeatured = isFeatured === 'true';
+    }
+
+    if (isPreorder !== undefined) {
+      filter.isPreorder = isPreorder === 'true';
+    }
+
+    // Filtro por talla
+    if (size) {
+      filter.sizes = { $in: [size] };
+    }
+
+    // Construir ordenamiento
+    const sort: any = {};
+    if (search && sortBy === 'relevance') {
+      sort.score = { $meta: 'textScore' };
+    } else {
+      sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    }
+
+    // Ejecutar consulta con conteo total
+    const [products, total] = await Promise.all([
+      this.productModel
+        .find(filter, search && sortBy === 'relevance' ? { score: { $meta: 'textScore' } } : {})
+        .sort(sort)
+        .skip(skip)
+        .limit(Number(limit))
+        .exec(),
+      this.productModel.countDocuments(filter)
+    ]);
+
+    const totalPages = Math.ceil(total / Number(limit));
+
+    return {
+      products,
+      total,
+      page: Number(page),
+      totalPages
+    };
   }
 
   async findById(id: string): Promise<Product> {
@@ -197,7 +267,7 @@ export class ProductsService {
         try {
           await this.releaseStock(reservation.productId, reservation.quantity);
         } catch (releaseError) {
-          console.error('Error releasing stock:', releaseError);
+          this.logger.error('Error releasing stock:', releaseError);
         }
       }
       return { success: false, errors: [`Stock reservation failed: ${error.message}`] };
@@ -216,4 +286,203 @@ export class ProductsService {
       isAvailable: product.isPreorder || product.stock > 0
     };
   }
+
+  // ===== GESTIÓN DE CATEGORÍAS =====
+
+  async findAllCategories(): Promise<{ category: string; count: number }[]> {
+    const categories = await this.productModel.aggregate([
+      {
+        $group: {
+          _id: '$category',
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          category: '$_id',
+          count: 1,
+          _id: 0
+        }
+      },
+      {
+        $sort: { category: 1 }
+      }
+    ]);
+
+    return categories;
+  }
+
+
+  async getCategoryStats(category: string): Promise<{
+    category: string;
+    totalProducts: number;
+    priceRange: { min: number; max: number };
+    averagePrice: number;
+    availableSizes: string[];
+    featuredProducts: number;
+    preorderProducts: number;
+  }> {
+    const stats = await this.productModel.aggregate([
+      { $match: { category: { $regex: new RegExp(category, 'i') } } },
+      {
+        $group: {
+          _id: '$category',
+          totalProducts: { $sum: 1 },
+          minPrice: { $min: '$price' },
+          maxPrice: { $max: '$price' },
+          averagePrice: { $avg: '$price' },
+          sizes: { $addToSet: '$sizes' },
+          featuredProducts: { $sum: { $cond: ['$isFeatured', 1, 0] } },
+          preorderProducts: { $sum: { $cond: ['$isPreorder', 1, 0] } }
+        }
+      },
+      {
+        $project: {
+          category: '$_id',
+          totalProducts: 1,
+          priceRange: {
+            min: '$minPrice',
+            max: '$maxPrice'
+          },
+          averagePrice: { $round: ['$averagePrice', 2] },
+          availableSizes: {
+            $reduce: {
+              input: '$sizes',
+              initialValue: [],
+              in: { $setUnion: ['$$value', '$$this'] }
+            }
+          },
+          featuredProducts: 1,
+          preorderProducts: 1,
+          _id: 0
+        }
+      }
+    ]);
+
+    if (stats.length === 0) {
+      throw new NotFoundException(`Category '${category}' not found`);
+    }
+
+    return stats[0];
+  }
+
+  // ===== MÉTODOS CON PROMOCIONES =====
+
+  async findByIdWithPromotions(productId: string): Promise<Product & { 
+    originalPrice: number; 
+    discountAmount: number; 
+    finalPrice: number; 
+    hasPromotion: boolean; 
+    promotionName?: string;
+  }> {
+    const product = await this.findById(productId);
+    
+    try {
+      const promotions = await this.promotionsService.getPromotionsByProduct(productId);
+      const activePromotion = promotions.find(p => p.isActive);
+      
+      if (activePromotion) {
+        const discount = this.calculateProductDiscount(activePromotion, product.price);
+        
+        return {
+          ...product.toObject(),
+          isPreorder: true, // Marcar como preorder cuando tiene promoción
+          originalPrice: product.price,
+          discountAmount: discount.discountAmount,
+          finalPrice: discount.finalPrice,
+          hasPromotion: true,
+          promotionName: activePromotion.name,
+        };
+      }
+    } catch (error) {
+      this.logger.warn(`Error obteniendo promociones para producto ${productId}:`, error.message);
+    }
+
+    return {
+      ...product.toObject(),
+      originalPrice: product.price,
+      discountAmount: 0,
+      finalPrice: product.price,
+      hasPromotion: false,
+    };
+  }
+
+  async findAllWithPromotions(query: any): Promise<{ 
+    products: Array<Product & { 
+      originalPrice: number; 
+      discountAmount: number; 
+      finalPrice: number; 
+      hasPromotion: boolean; 
+      promotionName?: string;
+    }>; 
+    total: number; 
+    page: number; 
+    totalPages: number;
+  }> {
+    const result = await this.findAll(query);
+    
+    const productsWithPromotions = await Promise.all(
+      result.products.map(async (product) => {
+        try {
+          const promotions = await this.promotionsService.getPromotionsByProduct((product._id as any).toString());
+          const activePromotion = promotions.find(p => p.isActive);
+          
+          if (activePromotion) {
+            const discount = this.calculateProductDiscount(activePromotion, product.price);
+            
+            return {
+              ...product.toObject(),
+              isPreorder: true, // Marcar como preorder cuando tiene promoción
+              originalPrice: product.price,
+              discountAmount: discount.discountAmount,
+              finalPrice: discount.finalPrice,
+              hasPromotion: true,
+              promotionName: activePromotion.name,
+            };
+          }
+        } catch (error) {
+          this.logger.warn(`Error obteniendo promociones para producto ${(product._id as any).toString()}:`, error.message);
+        }
+
+        return {
+          ...product.toObject(),
+          originalPrice: product.price,
+          discountAmount: 0,
+          finalPrice: product.price,
+          hasPromotion: false,
+        };
+      })
+    );
+
+    return {
+      ...result,
+      products: productsWithPromotions,
+    };
+  }
+
+  private calculateProductDiscount(promotion: any, originalPrice: number): {
+    discountAmount: number;
+    finalPrice: number;
+  } {
+    let discountAmount = 0;
+
+    switch (promotion.type) {
+      case 'percentage':
+        discountAmount = (originalPrice * promotion.discountPercentage) / 100;
+        break;
+      case 'fixed_amount':
+        discountAmount = Math.min(promotion.discountAmount, originalPrice);
+        break;
+      default:
+        discountAmount = 0;
+    }
+
+    const finalPrice = Math.max(0, originalPrice - discountAmount);
+
+    return {
+      discountAmount: Math.round(discountAmount * 100) / 100,
+      finalPrice: Math.round(finalPrice * 100) / 100,
+    };
+  }
+
 }

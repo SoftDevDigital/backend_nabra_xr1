@@ -59,11 +59,19 @@ export class CartService {
     }
 
     const cart = await this.getCart(userId);
-    const existingItem = cart.items.find(
-      (item) =>
-        item.product.toString() === addToCartDto.productId &&
-        item.size === addToCartDto.size,
-    );
+    const existingItem = cart.items.find((item) => {
+      // Obtener el ID del producto correctamente
+      let productId: string;
+      if (typeof item.product === 'object' && item.product._id) {
+        // Si está populado, usar el _id del objeto
+        productId = item.product._id.toString();
+      } else {
+        // Si no está populado, usar directamente el ObjectId
+        productId = item.product.toString();
+      }
+      
+      return productId === addToCartDto.productId && item.size === addToCartDto.size;
+    });
 
     const finalQuantity = existingItem 
       ? existingItem.quantity + addToCartDto.quantity
@@ -108,7 +116,18 @@ export class CartService {
     }
 
     const item = cart.items[itemIndex];
-    const product = await this.productsService.findById(item.product.toString());
+    
+    // Obtener el ID del producto correctamente
+    let productId: string;
+    if (typeof item.product === 'object' && item.product._id) {
+      // Si está populado, usar el _id del objeto
+      productId = item.product._id.toString();
+    } else {
+      // Si no está populado, usar directamente el ObjectId
+      productId = item.product.toString();
+    }
+    
+    const product = await this.productsService.findById(productId);
 
     // Validar nueva cantidad si se proporciona
     if (updateCartDto.quantity !== undefined) {
@@ -122,7 +141,7 @@ export class CartService {
 
       // Validar stock para la nueva cantidad
       const stockCheck = await this.productsService.checkStockAvailability(
-        item.product.toString(), 
+        productId, 
         updateCartDto.quantity
       );
 
@@ -162,10 +181,22 @@ export class CartService {
   }
 
   async clearCart(userId: string) {
-    const cart = await this.getCart(userId);
-    cart.items = [];
-    return await cart.save();
+    console.log('🧹 [CART-SERVICE] Limpiando carrito completamente para usuario:', userId);
+    
+    // Limpiar TODA la información del carrito
+    await this.cartModel.updateOne(
+      { userId }, 
+      { 
+        $set: { 
+          items: []
+        } 
+      }
+    ).exec();
+    
+    console.log('✅ [CART-SERVICE] Carrito limpiado completamente');
+    return { success: true } as const;
   }
+
 
   async validateCartForCheckout(userId: string): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
     const cart = await this.getCart(userId);
@@ -271,8 +302,8 @@ export class CartService {
       };
     });
 
-    const estimatedTax = parseFloat((subtotal * 0.1).toFixed(2)); // 10% tax estimate
-    const estimatedTotal = parseFloat((subtotal + estimatedTax).toFixed(2));
+    const estimatedTax = 0; // Impuestos deshabilitados
+    const estimatedTotal = parseFloat(subtotal.toFixed(2));
 
     return {
       items,
@@ -289,6 +320,8 @@ export class CartService {
     cartSummary: any;
     discounts: any;
     finalTotal: number;
+    lastUpdated: Date;
+    promotionsChecked: number;
   }> {
     try {
       // Obtener resumen básico del carrito
@@ -299,36 +332,77 @@ export class CartService {
           cartSummary,
           discounts: { appliedPromotions: [], totalDiscount: 0 },
           finalTotal: 0,
+          lastUpdated: new Date(),
+          promotionsChecked: 0,
         };
       }
 
-      // Preparar items para el calculador de descuentos
-      const cartItems = cartSummary.items.map(item => ({
-        productId: item.product._id,
-        cartItemId: item._id,
-        productName: item.product.name,
-        category: item.product.category || 'general',
-        quantity: item.quantity,
-        price: item.product.price,
-        size: item.size,
-      }));
+      // Preparar items para el calculador de descuentos con información actualizada
+      const cartItems = await Promise.all(
+        cartSummary.items.map(async (item) => {
+          try {
+            // Obtener información actualizada del producto con promociones
+            const productWithPromotions = await this.productsService.findByIdWithPromotions(item.product._id.toString());
+            
+            return {
+              productId: item.product._id,
+              cartItemId: item._id,
+              productName: item.product.name,
+              category: item.product.category || 'general',
+              quantity: item.quantity,
+              price: productWithPromotions.finalPrice, // Usar precio con promoción
+              originalPrice: productWithPromotions.originalPrice,
+              hasPromotion: productWithPromotions.hasPromotion,
+              promotionName: productWithPromotions.promotionName,
+              size: item.size,
+            };
+          } catch (error) {
+            // Si falla, usar precio original
+            return {
+              productId: item.product._id,
+              cartItemId: item._id,
+              productName: item.product.name,
+              category: item.product.category || 'general',
+              quantity: item.quantity,
+              price: item.product.price,
+              originalPrice: item.product.price,
+              hasPromotion: false,
+              size: item.size,
+            };
+          }
+        })
+      );
 
-      // Calcular descuentos
+      // Calcular totales con precios actualizados
+      const updatedSubtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const updatedTax = 0; // Impuestos deshabilitados
+      const updatedTotal = updatedSubtotal;
+
+      // Calcular descuentos adicionales (cupones, promociones de carrito, etc.)
       const discounts = await this.discountCalculatorService.calculateDiscounts(userId, {
         couponCode,
         cartItems,
-        totalAmount: cartSummary.subtotal,
+        totalAmount: updatedSubtotal,
       });
 
-      const finalTotal = Math.max(0, cartSummary.estimatedTotal - discounts.totalDiscount);
+      const finalTotal = Math.max(0, updatedTotal - discounts.totalDiscount);
+
+      // Contar promociones aplicadas
+      const promotionsChecked = cartItems.filter(item => item.hasPromotion).length;
 
       return {
         cartSummary: {
           ...cartSummary,
+          subtotal: Math.round(updatedSubtotal * 100) / 100,
+          estimatedTax: Math.round(updatedTax * 100) / 100,
+          estimatedTotal: Math.round(updatedTotal * 100) / 100,
           originalTotal: cartSummary.estimatedTotal,
+          items: cartItems, // Incluir items con información de promociones
         },
         discounts,
         finalTotal: Math.round(finalTotal * 100) / 100,
+        lastUpdated: new Date(),
+        promotionsChecked,
       };
 
     } catch (error) {
@@ -343,7 +417,10 @@ export class CartService {
           errors: [error.message] 
         },
         finalTotal: cartSummary.estimatedTotal,
+        lastUpdated: new Date(),
+        promotionsChecked: 0,
       };
     }
   }
+
 }

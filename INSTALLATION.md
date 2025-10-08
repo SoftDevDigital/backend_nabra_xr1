@@ -206,7 +206,7 @@ npm run build
 npx kill-port 3001
 
 # Or change PORT in .env file
-PORT=3002
+PORT=3003
 ```
 
 #### MongoDB Connection Issues
@@ -253,3 +253,21 @@ After successful installation:
 3. Integrate with your frontend application
 4. Configure production environment variables
 5. Set up monitoring and logging for production deployment
+
+## Zoho Mail (SMTP)
+
+Configura las siguientes variables de entorno para enviar correos vía Zoho (SMTP):
+
+```
+ZOHO_SMTP_HOST=smtp.zoho.com
+ZOHO_SMTP_PORT=587
+ZOHO_SMTP_SECURE=false
+ZOHO_SMTP_USER=tu-correo@tudominio.com
+ZOHO_SMTP_PASS=tu-password-o-app-password
+ZOHO_FROM="Nabra <tu-correo@tudominio.com>"
+```
+
+Notas:
+- Si usas 465 entonces `ZOHO_SMTP_SECURE=true`.
+- Recomendado usar App Password de Zoho.
+- El `from` cae por defecto en `ZOHO_SMTP_USER` si no se define.
