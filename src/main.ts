@@ -20,7 +20,7 @@ async function bootstrap() {
 
   // Configuración de CORS
   app.enableCors({
-    origin: configService.get('CORS_ORIGIN')?.split(',') || ['http://localhost:3000'],
+    origin: configService.get('CORS_ORIGIN')?.split(',') || ['http://localhost:3000', 'https://nabra.mx', 'http://nabra.mx'],
     credentials: configService.get('CORS_CREDENTIALS') === 'true',
     methods: configService.get('CORS_METHODS')?.split(',') || ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: configService.get('CORS_ALLOWED_HEADERS')?.split(',') || ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
