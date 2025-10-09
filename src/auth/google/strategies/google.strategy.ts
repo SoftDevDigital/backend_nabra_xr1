@@ -13,15 +13,21 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     private configService: ConfigService,
     private googleUserService: GoogleUserService,
   ) {
+    const clientID = configService.get<string>('GOOGLE_CLIENT_ID');
+    const clientSecret = configService.get<string>('GOOGLE_CLIENT_SECRET');
+    
+    if (!clientID || !clientSecret) {
+      console.error('❌ Google OAuth credentials missing!');
+      console.error('   GOOGLE_CLIENT_ID:', clientID || 'NOT FOUND');
+      console.error('   GOOGLE_CLIENT_SECRET:', clientSecret || 'NOT FOUND');
+      throw new Error('Google OAuth credentials are required. Please check your .env file.');
+    }
+    
     super({
-      clientID: googleAuthConfig.clientId,
-      clientSecret: googleAuthConfig.clientSecret,
-      callbackURL: googleAuthConfig.callbackUrl,
+      clientID: clientID,
+      clientSecret: clientSecret,
+      callbackURL: configService.get<string>('GOOGLE_CALLBACK_URL') || googleAuthConfig.callbackUrl,
       scope: googleAuthConfig.scope,
-      // Configuración adicional de seguridad
-      passReqToCallback: false,
-      // Configuración de proxy (si es necesario)
-      proxy: process.env.NODE_ENV === 'production',
     });
   }
 

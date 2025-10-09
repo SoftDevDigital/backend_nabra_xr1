@@ -2,6 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as dotenv from 'dotenv';
+
+// Cargar variables de entorno antes de iniciar la aplicación
+dotenv.config();
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

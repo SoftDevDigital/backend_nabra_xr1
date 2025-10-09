@@ -41,6 +41,7 @@
     "braintree": "^3.33.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "dotenv": "^17.2.3",
     "mercadopago": "^1.5.15",
     "mongoose": "^8.18.1",
     "multer": "^2.0.2",
