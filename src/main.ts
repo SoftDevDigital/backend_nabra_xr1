@@ -20,7 +20,7 @@ async function bootstrap() {
 
   // Configuración de CORS
   app.enableCors({
-    origin: ['http://localhost:3000', 'https://nabra.mx'],
+    origin: ['https://nabra.mx'],
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
@@ -29,6 +29,6 @@ async function bootstrap() {
   // Puerto desde variables de entorno
   const port = configService.get('PORT') || 3001;
   await app.listen(port);
-  console.log(`🚀 Backend corriendo en http://localhost:${port}`);
+  console.log(`🚀 Backend corriendo en https://api.nabra.mx:${port}`);
 }
 bootstrap();
