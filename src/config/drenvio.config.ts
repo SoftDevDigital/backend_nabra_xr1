@@ -75,7 +75,7 @@ export const drenvioConfig = {
 
   // Configuración de webhooks
   webhooks: {
-    baseUrl: process.env.APP_BASE_URL || 'https://9dbdcf7272a6.ngrok-free.app',
+    baseUrl: process.env.APP_BASE_URL || 'http://localhost:3001',
     endpoints: {
       statusUpdate: '/api/drenvio/webhooks/status-update',
       delivered: '/api/drenvio/webhooks/delivered',
