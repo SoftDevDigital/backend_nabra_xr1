@@ -16,9 +16,9 @@ export const googleAuthConfig = {
   jwtSecret: process.env.JWT_SECRET || 'your-jwt-secret',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   
-  // Configuración de redirección después del login
-  successRedirect: process.env.GOOGLE_SUCCESS_REDIRECT || 'https://nabra.mx/',
-  failureRedirect: process.env.GOOGLE_FAILURE_REDIRECT || 'https://nabra.mx/login?error=auth_failed',
+  // Configuración de redirección después del login - HARDCODED
+  successRedirect: 'https://nabra.mx/',
+  failureRedirect: 'https://nabra.mx/login?error=auth_failed',
   
   // Configuración de seguridad
   security: {

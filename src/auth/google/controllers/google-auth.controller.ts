@@ -52,7 +52,7 @@ export class GoogleAuthController {
 
       if (!user) {
         this.logger.error('No user data received from Google OAuth');
-        return res.redirect(`${googleAuthConfig.failureRedirect}?error=no_user_data`);
+        return res.redirect(`https://nabra.mx/login?error=no_user_data`);
       }
 
       // Generar JWT token
@@ -91,14 +91,14 @@ export class GoogleAuthController {
         linkedUserId: user.linkedUserId,
       };
 
-      // Crear URL con parámetros para el frontend
-      const redirectUrl = `${googleAuthConfig.successRedirect}?token=${accessToken}&user=${encodeURIComponent(JSON.stringify(userData))}&login=success`;
+      // Crear URL con parámetros para el frontend - HARDCODED
+      const redirectUrl = `https://nabra.mx/?token=${accessToken}&user=${encodeURIComponent(JSON.stringify(userData))}&login=success`;
 
       return res.redirect(redirectUrl);
 
     } catch (error) {
       this.logger.error(`Google OAuth callback error: ${error.message}`, error.stack);
-      return res.redirect(`${googleAuthConfig.failureRedirect}?error=server_error`);
+      return res.redirect(`https://nabra.mx/login?error=server_error`);
     }
   }
 
