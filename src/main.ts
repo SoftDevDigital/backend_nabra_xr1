@@ -19,38 +19,16 @@ async function bootstrap() {
   }));
 
   // Configuración de CORS
-  const allowedOrigins = configService.get('CORS_ORIGIN')
-    ? configService.get('CORS_ORIGIN').split(',').map((origin: string) => origin.trim())
-    : [
-        'http://localhost:3000',
-        'http://localhost:3001', 
-        'https://nabra.mx', 
-        'https://www.nabra.mx',
-        'http://nabra.mx',
-        'http://www.nabra.mx'
-      ];
-
   app.enableCors({
-    origin: (origin, callback) => {
-      // Permitir requests sin origin (como mobile apps, Postman, curl, etc.)
-      if (!origin) return callback(null, true);
-      
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        console.log(`🚫 CORS bloqueado para origen: ${origin}`);
-        callback(new Error(`Origen no permitido por CORS: ${origin}`));
-      }
-    },
+    origin: ['http://localhost:3000', 'https://nabra.mx'],
     credentials: true,
-    methods: configService.get('CORS_METHODS')?.split(',') || ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: configService.get('CORS_ALLOWED_HEADERS')?.split(',') || ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
-    exposedHeaders: ['Content-Length', 'Content-Type'],
-    maxAge: 86400, // Cache de preflight por 24 horas
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   });
 
   // Puerto desde variables de entorno
   const port = configService.get('PORT') || 3001;
   await app.listen(port);
+  console.log(`🚀 Backend corriendo en http://localhost:${port}`);
 }
 bootstrap();
