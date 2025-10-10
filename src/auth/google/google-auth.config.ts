@@ -3,7 +3,7 @@ export const googleAuthConfig = {
   clientId: process.env.GOOGLE_CLIENT_ID || '',
   clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
    
-  // URLs de callback
+  // URL de callback - Configurar según variable de entorno
   callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3001/auth/google/callback',
   
   // Scope de permisos solicitados
@@ -31,9 +31,7 @@ export const googleAuthConfig = {
     cookieSameSite: 'lax' as const,
     
     // Configuración de CORS
-    allowedOrigins: process.env.NODE_ENV === 'production' 
-      ? ['https://yourdomain.com'] 
-      : ['http://localhost:3000', 'http://localhost:3001'],
+    allowedOrigins: ['http://localhost:3001', 'https://api.nabra.mx'],
   },
   
   // Configuración de validación
