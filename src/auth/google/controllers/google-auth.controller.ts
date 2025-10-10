@@ -22,6 +22,7 @@ import { GoogleUserService } from '../services/google-user.service';
 import { JwtService } from '@nestjs/jwt';
 import { googleAuthConfig } from '../google-auth.config';
 import { GoogleAuthUrlResponseDto, GoogleUserResponseDto, GoogleLinkResponseDto } from '../dtos/google-auth-response.dto';
+import { Public } from '../../../common/decorators/public.decorator';
 
 @Controller('auth/google')
 export class GoogleAuthController {
@@ -34,6 +35,7 @@ export class GoogleAuthController {
 
   // ===== INICIO DE SESIÓN CON GOOGLE =====
 
+  @Public()
   @Get()
   @UseGuards(AuthGuard('google'))
   async googleAuth(@Req() req: Request) {
@@ -41,6 +43,7 @@ export class GoogleAuthController {
     // La lógica se maneja en la estrategia de Google
   }
 
+  @Public()
   @Get('callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthCallback(@Req() req: Request, @Res() res: Response) {
@@ -101,6 +104,7 @@ export class GoogleAuthController {
 
   // ===== OBTENER URL DE AUTENTICACIÓN =====
 
+  @Public()
   @Get('auth-url')
   async getAuthUrl(@Query('state') state?: string): Promise<GoogleAuthUrlResponseDto> {
     try {
