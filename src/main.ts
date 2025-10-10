@@ -27,7 +27,7 @@ async function bootstrap() {
   });
 
   // Puerto desde variables de entorno
-  const port = configService.get('PORT') || 3001;
+  const port = 3001;
   await app.listen(port);
   console.log(`🚀 Backend corriendo en https://api.nabra.mx:${port}`);
 }
