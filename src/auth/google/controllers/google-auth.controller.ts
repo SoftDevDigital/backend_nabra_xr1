@@ -92,7 +92,7 @@ export class GoogleAuthController {
       };
 
       // Crear URL con parámetros para el frontend - HARDCODED
-      const redirectUrl = `https://nabra.mx/?token=${accessToken}&user=${encodeURIComponent(JSON.stringify(userData))}&login=success`;
+      const redirectUrl = `https://nabra.mx/perfil?token=${accessToken}&user=${encodeURIComponent(JSON.stringify(userData))}&login=success`;
 
       return res.redirect(redirectUrl);
 
