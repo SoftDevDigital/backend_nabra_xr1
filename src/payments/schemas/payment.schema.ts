@@ -51,6 +51,7 @@ export class Payment extends Document {
     quantity: number;
     price: number;
     currency?: string;
+    productId?: string; // ID del producto para trazabilidad del stock
   }[];
 
   @Prop()

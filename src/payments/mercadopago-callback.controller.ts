@@ -1,9 +1,13 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Query,
+  Request,
   Res,
   HttpStatus,
+  HttpCode,
   Logger,
   Inject,
   forwardRef,
@@ -13,6 +17,7 @@ import { PaymentsService } from './payments.service';
 import { OrdersService } from '../orders/orders.service';
 import { NotificationsService } from '../notifications/services/notifications.service';
 import { Public } from '../common/decorators/public.decorator';
+import { MercadoPagoCheckoutDto } from './dtos/simple-shipping.dto';
 
 @Controller('payments/mercadopago')
 export class MercadoPagoCallbackController {
@@ -23,6 +28,62 @@ export class MercadoPagoCallbackController {
     @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService,
     private notificationsService: NotificationsService,
   ) {}
+
+  /**
+   * Endpoint para crear un checkout de MercadoPago desde el carrito
+   */
+  @Post('checkout')
+  @HttpCode(HttpStatus.CREATED)
+  async createCheckout(
+    @Request() req,
+    @Body() checkoutDto: MercadoPagoCheckoutDto,
+  ) {
+    try {
+      this.logger.log(`Creating MercadoPago checkout for user ${req.user.userId}`);
+      
+      // Convertir simpleShipping a shippingAddress y shippingContact
+      const cartCheckout: any = {
+        returnUrl: checkoutDto.returnUrl,
+        cancelUrl: checkoutDto.cancelUrl,
+      };
+
+      if (checkoutDto.simpleShipping) {
+        cartCheckout.shippingAddress = {
+          street: checkoutDto.simpleShipping.address.addressLine,
+          city: checkoutDto.simpleShipping.address.city,
+          zip: checkoutDto.simpleShipping.address.postalCode,
+          country: checkoutDto.simpleShipping.address.country,
+          state: checkoutDto.simpleShipping.address.state,
+        };
+
+        cartCheckout.shippingContact = {
+          email: checkoutDto.simpleShipping.contact.emailOrPhone,
+          firstName: checkoutDto.simpleShipping.contact.firstName,
+          lastName: checkoutDto.simpleShipping.contact.lastName,
+          phone: checkoutDto.simpleShipping.contact.phone,
+        };
+      }
+
+      if (checkoutDto.shippingOption) {
+        cartCheckout.shippingOption = checkoutDto.shippingOption;
+      }
+
+      // Crear el pago de MercadoPago desde el carrito
+      const result = await this.paymentsService.createMercadoPagoPaymentFromCart(
+        req.user.userId,
+        cartCheckout
+      );
+
+      return {
+        success: true,
+        data: result,
+        message: 'MercadoPago checkout created successfully',
+      };
+    } catch (error) {
+      this.logger.error('Error creating MercadoPago checkout:', error);
+      throw error;
+    }
+  }
 
   /**
    * Callback de éxito de MercadoPago
@@ -50,10 +111,38 @@ export class MercadoPagoCallbackController {
         return res.redirect(`${frontendUrl}/payment/error?message=Payment+not+found`);
       }
 
-      // Actualizar estado del pago a COMPLETED
+      // Verificar que el pago fue aprobado por MercadoPago
+      // Status puede ser: 'approved', 'pending', 'rejected', 'in_process'
+      if (status !== 'approved') {
+        this.logger.warn(`Payment ${payment._id} not approved. Status: ${status}`);
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        return res.redirect(`${frontendUrl}/payment/pending?status=${status}`);
+      }
+
+      // Actualizar estado del pago a COMPLETED solo si está aprobado
       const internalPaymentId = (payment as any)._id.toString();
       await this.paymentsService.updatePaymentStatus(internalPaymentId, 'completed');
       this.logger.log(`Payment ${internalPaymentId} marked as COMPLETED`);
+
+      // LIMPIAR EL CARRITO DEL USUARIO (solo cuando el pago es exitoso)
+      const userId = payment.userId.toString();
+      await this.paymentsService.clearUserCart(userId);
+      this.logger.log(`Cart cleared for user ${userId}`);
+
+      // RESTAR STOCK: Descontar el stock de los productos SOLO cuando el pago es exitoso
+      try {
+        for (const item of payment.items) {
+          if (item.productId) {
+            // Restar el stock del producto
+            await this.paymentsService.decrementProductStock(item.productId, item.quantity);
+            this.logger.log(`Stock decremented for product ${item.productId}: ${item.quantity} units`);
+          }
+        }
+      } catch (stockError) {
+        this.logger.error('Error decrementing stock:', stockError);
+        // No lanzar error, continuar con la creación de la orden
+        // TODO: Implementar compensación si falla (reversar pago o notificar admin)
+      }
 
       // Crear la orden automáticamente con la info guardada en metadata
       try {
@@ -64,7 +153,7 @@ export class MercadoPagoCallbackController {
             name: item.name,
             quantity: item.quantity,
             price: item.price,
-            productId: undefined,
+            productId: item.productId, // Ahora pasamos el productId correcto
           })),
           totalAmount: payment.amount,
           currency: payment.currency,

@@ -547,103 +547,81 @@ export class PaymentsService {
         throw new BadRequestException('Cart is empty');
       }
 
-      // Preparar items para reserva de stock
-      const stockItems = cart.items.map(item => {
-        let productId: string;
-        
-        if (typeof item.product === 'string') {
-          productId = item.product;
-        } else if (item.product && typeof item.product === 'object') {
-          productId = (item.product as any)._id?.toString() || (item.product as any).toString();
-        } else {
-          productId = (item.product as any).toString();
-        }
+      // NO reservamos stock aquí - El stock se restará SOLO cuando el pago sea exitoso
+      // Esto evita que el stock quede bloqueado si el usuario no completa el pago
 
-        return {
-          productId,
-          quantity: item.quantity
-        };
+      // Preparar items para MercadoPago
+      const items = cart.items.map((item) => ({
+        title: (item.product as any).name,
+        description: (item.product as any).description || '',
+        quantity: item.quantity,
+        unit_price: (item.product as any).price,
+        currency_id: 'MXN', // Pesos mexicanos por defecto
+      }));
+
+      const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+      // Crear la preferencia de pago en MercadoPago
+      const mpResponse = await this.mercadoPagoService.createCheckoutPreference({
+        items,
+        externalReference: cart._id?.toString() || '',
+        notificationUrl: `${baseUrl}/payments/webhook/mercadopago`,
+        backUrls: {
+          success: checkoutDto.returnUrl || `${frontendUrl}/payment/success`,
+          failure: checkoutDto.cancelUrl || `${frontendUrl}/payment/failure`,
+          pending: `${frontendUrl}/payment/pending`,
+        },
+        autoReturn: 'approved',
+        currency: 'MXN',
       });
 
-      // Reservar stock antes de crear el pago
-      const stockReservation = await this.productsService.bulkReserveStock(stockItems);
-      if (!stockReservation.success) {
-        throw new BadRequestException(`Stock reservation failed: ${stockReservation.errors.join(', ')}`);
-      }
-
-      try {
-        // Preparar items para MercadoPago
-        const items = cart.items.map((item) => ({
-          title: (item.product as any).name,
-          description: (item.product as any).description || '',
-          quantity: item.quantity,
-          unit_price: (item.product as any).price,
-          currency_id: 'MXN', // Pesos mexicanos por defecto
-        }));
-
-        const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-        // Crear la preferencia de pago en MercadoPago
-        const mpResponse = await this.mercadoPagoService.createCheckoutPreference({
-          items,
-          externalReference: cart._id?.toString() || '',
-          notificationUrl: `${baseUrl}/payments/webhook/mercadopago`,
-          backUrls: {
-            success: checkoutDto.returnUrl || `${frontendUrl}/payment/success`,
-            failure: checkoutDto.cancelUrl || `${frontendUrl}/payment/failure`,
-            pending: `${frontendUrl}/payment/pending`,
-          },
-          autoReturn: 'approved',
-          currency: 'MXN',
-        });
-
-        // Guardar el pago en la base de datos
-        const payment = new this.paymentModel({
-          userId,
-          provider: PaymentProvider.MERCADOPAGO,
-          providerPaymentId: mpResponse.id,
-          status: PaymentStatus.PENDING,
-          amount: items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0),
-          currency: 'MXN',
-          description: `Payment for cart ${cart._id}`,
-          orderId: cart._id,
-          items: items.map(item => ({
-            name: item.title,
-            description: item.description,
-            quantity: item.quantity,
-            price: item.unit_price,
+      // Guardar el pago en la base de datos
+      const payment = new this.paymentModel({
+        userId,
+        provider: PaymentProvider.MERCADOPAGO,
+        providerPaymentId: mpResponse.id,
+        status: PaymentStatus.PENDING,
+        amount: items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0),
+        currency: 'MXN',
+        description: `Payment for cart ${cart._id}`,
+        orderId: cart._id,
+        items: cart.items.map((cartItem) => {
+          const product = cartItem.product as any;
+          const productId = product._id?.toString() || (typeof product === 'string' ? product : undefined);
+          return {
+            name: product.name,
+            description: product.description || '',
+            quantity: cartItem.quantity,
+            price: product.price,
             currency: 'MXN',
-          })),
-          approvalUrl: mpResponse.init_point,
-          metadata: {
-            returnUrl: checkoutDto.returnUrl,
-            cancelUrl: checkoutDto.cancelUrl,
-            preferenceId: mpResponse.id,
-            shippingAddress: checkoutDto.shippingAddress,
-            shippingMethod: checkoutDto.shippingMethod || 'standard',
-          },
-        });
-
-        await payment.save();
-
-        this.logger.log(`MercadoPago payment created for user ${userId}: ${payment._id}`);
-
-        // Limpiar el carrito después de crear el pago exitosamente
-        await this.cartService.clearCart(userId);
-
-        return {
-          id: payment._id?.toString() || '',
-          init_point: mpResponse.init_point,
+            productId, // Guardar productId para trazabilidad
+          };
+        }),
+        approvalUrl: mpResponse.init_point,
+        metadata: {
+          returnUrl: checkoutDto.returnUrl,
+          cancelUrl: checkoutDto.cancelUrl,
           preferenceId: mpResponse.id,
-        };
-      } catch (error) {
-        // Si falla la creación del pago, liberar el stock reservado
-        for (const item of stockItems) {
-          await this.productsService.releaseStock(item.productId, item.quantity);
-        }
-        throw error;
-      }
+          shippingAddress: checkoutDto.shippingAddress,
+          shippingMethod: checkoutDto.shippingMethod || 'standard',
+          shippingContact: checkoutDto.shippingContact,
+          shippingOption: checkoutDto.shippingOption,
+        },
+      });
+
+      await payment.save();
+
+      this.logger.log(`MercadoPago payment created for user ${userId}: ${payment._id}`);
+
+      // NO limpiar el carrito aquí - se limpiará cuando MercadoPago confirme el pago exitoso
+      // El carrito se limpiará en el callback de éxito después de que el pago sea aprobado
+
+      return {
+        id: payment._id?.toString() || '',
+        init_point: mpResponse.init_point,
+        preferenceId: mpResponse.id,
+      };
     } catch (error) {
       this.logger.error('Error creating MercadoPago payment from cart:', error);
       throw new BadRequestException(`Failed to create MercadoPago payment: ${error.message}`);
@@ -988,6 +966,40 @@ export class PaymentsService {
     } catch (error) {
       this.logger.error('Error creating MercadoPago payment from cart V2:', error);
       throw new BadRequestException(`Failed to create MercadoPago payment: ${error.message}`);
+    }
+  }
+
+  // Método para limpiar el carrito del usuario
+  async clearUserCart(userId: string): Promise<void> {
+    try {
+      await this.cartService.clearCart(userId);
+      this.logger.log(`Cart cleared for user ${userId}`);
+    } catch (error) {
+      this.logger.error(`Error clearing cart for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  // Método para buscar un producto por nombre
+  async findProductByName(name: string): Promise<any> {
+    try {
+      const products = await this.productsService.search(name);
+      return products.find(p => p.name === name);
+    } catch (error) {
+      this.logger.error(`Error finding product by name ${name}:`, error);
+      return null;
+    }
+  }
+
+  // Método para decrementar el stock de un producto
+  async decrementProductStock(productId: string, quantity: number): Promise<void> {
+    try {
+      // Usamos reserveStock que internamente hace: product.stock -= quantity
+      await this.productsService.reserveStock(productId, quantity);
+      this.logger.log(`Stock decremented for product ${productId}: ${quantity} units`);
+    } catch (error) {
+      this.logger.error(`Error decrementing stock for product ${productId}:`, error);
+      throw error;
     }
   }
 }

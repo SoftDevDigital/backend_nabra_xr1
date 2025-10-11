@@ -21,19 +21,20 @@ import { Public } from '../common/decorators/public.decorator';
 export class PaymentsController {
   constructor(private paymentsService: PaymentsService) {}
 
-  @Post('from-cart')
-  @HttpCode(HttpStatus.CREATED)
-  async createPaymentFromCart(
-    @Request() req,
-    @Query('returnUrl') returnUrl?: string,
-    @Query('cancelUrl') cancelUrl?: string,
-  ) {
-    return this.paymentsService.createPaymentFromCart(
-      req.user.userId,
-      returnUrl,
-      cancelUrl,
-    );
-  }
+  // Endpoint deprecated - use /payments/mercadopago/checkout instead
+  // @Post('from-cart')
+  // @HttpCode(HttpStatus.CREATED)
+  // async createPaymentFromCart(
+  //   @Request() req,
+  //   @Query('returnUrl') returnUrl?: string,
+  //   @Query('cancelUrl') cancelUrl?: string,
+  // ) {
+  //   return this.paymentsService.createPaymentFromCart(
+  //     req.user.userId,
+  //     returnUrl,
+  //     cancelUrl,
+  //   );
+  // }
 
   @Post('partial-checkout')
   @HttpCode(HttpStatus.CREATED)
