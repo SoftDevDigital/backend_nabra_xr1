@@ -559,6 +559,17 @@ export class PaymentsService {
         currency_id: 'MXN', // Pesos mexicanos por defecto
       }));
 
+      // Agregar el costo de envío como un item adicional si existe
+      if (checkoutDto.shippingOption?.price && checkoutDto.shippingOption.price > 0) {
+        items.push({
+          title: `Envío - ${checkoutDto.shippingOption.carrier || 'Estándar'}`,
+          description: checkoutDto.shippingOption.service || 'Servicio de envío',
+          quantity: 1,
+          unit_price: checkoutDto.shippingOption.price,
+          currency_id: 'MXN',
+        });
+      }
+
       const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -576,13 +587,18 @@ export class PaymentsService {
         currency: 'MXN',
       });
 
+      // Calcular el total: productos + envío (si existe)
+      const cartTotal = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+      const shippingCost = checkoutDto.shippingOption?.price || 0;
+      const totalAmount = cartTotal + shippingCost;
+
       // Guardar el pago en la base de datos
       const payment = new this.paymentModel({
         userId,
         provider: PaymentProvider.MERCADOPAGO,
         providerPaymentId: mpResponse.id,
         status: PaymentStatus.PENDING,
-        amount: items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0),
+        amount: totalAmount,
         currency: 'MXN',
         description: `Payment for cart ${cart._id}`,
         orderId: cart._id,
