@@ -1,22 +1,8 @@
-import { IsArray, IsMongoId, IsInt, Min, ValidateNested, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ShippingAddressDto } from './shipping-address.dto';
 
-class PartialCartItemDto {
-  @IsMongoId()
-  itemId: string;
-
-  @IsInt()
-  @Min(1)
-  quantity: number;
-}
-
-export class PartialCheckoutDto {
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => PartialCartItemDto)
-  items: PartialCartItemDto[];
-
+export class CartCheckoutDto {
   @ValidateNested()
   @Type(() => ShippingAddressDto)
   shippingAddress: ShippingAddressDto;
@@ -25,9 +11,12 @@ export class PartialCheckoutDto {
   @IsOptional()
   shippingMethod?: string; // 'standard', 'express', 'overnight', etc.
 
+  @IsString()
   @IsOptional()
   returnUrl?: string;
 
+  @IsString()
   @IsOptional()
   cancelUrl?: string;
 }
+

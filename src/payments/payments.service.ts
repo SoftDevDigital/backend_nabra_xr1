@@ -10,9 +10,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Payment, PaymentDocument, PaymentStatus, PaymentProvider } from './schemas/payment.schema';
 import { PayPalService } from './paypal.service';
+import { MercadoPagoService } from './mercadopago.service';
 import { CreatePaymentDto } from './dtos/create-payment.dto';
 import { PaymentResponseDto } from './dtos/payment-response.dto';
 import { PartialCheckoutDto } from './dtos/partial-checkout.dto';
+import { CartCheckoutDto } from './dtos/cart-checkout.dto';
+import { MercadoPagoCheckoutDto } from './dtos/simple-shipping.dto';
 import { CartService } from '../cart/cart.service';
 import { ProductsService } from '../products/products.service';
 import { OrdersService } from '../orders/orders.service';
@@ -24,6 +27,7 @@ export class PaymentsService {
   constructor(
     @InjectModel(Payment.name) private paymentModel: Model<PaymentDocument>,
     private paypalService: PayPalService,
+    private mercadoPagoService: MercadoPagoService,
     @Inject(forwardRef(() => CartService)) private cartService: CartService,
     private productsService: ProductsService,
     @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService,
@@ -150,7 +154,7 @@ export class PaymentsService {
     }
   }
 
-  async createPaymentFromCart(userId: string, returnUrl?: string, cancelUrl?: string): Promise<PaymentResponseDto> {
+  async createPaymentFromCart(userId: string, checkoutDto: CartCheckoutDto): Promise<PaymentResponseDto> {
     try {
       // Validar el carrito antes de proceder
       const validation = await this.cartService.validateCartForCheckout(userId);
@@ -212,11 +216,22 @@ export class PaymentsService {
           items,
           totalAmount,
           currency: 'USD',
-          returnUrl,
-          cancelUrl,
+          returnUrl: checkoutDto.returnUrl,
+          cancelUrl: checkoutDto.cancelUrl,
         };
 
         const paymentResponse = await this.createPayment(userId, createPaymentDto);
+        
+        // Guardar información de envío con el pago
+        const payment = await this.paymentModel.findById(paymentResponse.id);
+        if (payment) {
+          payment.metadata = {
+            ...payment.metadata,
+            shippingAddress: checkoutDto.shippingAddress,
+            shippingMethod: checkoutDto.shippingMethod || 'standard',
+          };
+          await payment.save();
+        }
         
         // Limpiar el carrito después de crear el pago exitosamente
         await this.cartService.clearCart(userId);
@@ -338,6 +353,17 @@ export class PaymentsService {
 
         const paymentResponse = await this.createPayment(userId, createPaymentDto);
         
+        // Guardar información de envío con el pago
+        const payment = await this.paymentModel.findById(paymentResponse.id);
+        if (payment) {
+          payment.metadata = {
+            ...payment.metadata,
+            shippingAddress: partialCheckoutDto.shippingAddress,
+            shippingMethod: partialCheckoutDto.shippingMethod || 'standard',
+          };
+          await payment.save();
+        }
+        
         // Actualizar cantidades en el carrito
         for (const selectedItem of selectedItems) {
           const cartItem = selectedItem.cartItem;
@@ -366,14 +392,14 @@ export class PaymentsService {
     }
   }
 
-  async updatePaymentStatus(paymentId: string, status: PaymentStatus, errorMessage?: string): Promise<void> {
+  async updatePaymentStatus(paymentId: string, status: PaymentStatus | string, errorMessage?: string): Promise<void> {
     try {
       const payment = await this.paymentModel.findById(paymentId);
       if (!payment) {
         throw new NotFoundException('Payment not found');
       }
 
-      payment.status = status;
+      payment.status = status as PaymentStatus;
       if (errorMessage) {
         payment.errorMessage = errorMessage;
       }
@@ -383,6 +409,23 @@ export class PaymentsService {
     } catch (error) {
       this.logger.error('Error updating payment status:', error);
       throw error;
+    }
+  }
+
+  async findByMercadoPagoPreference(preferenceId: string): Promise<PaymentDocument | null> {
+    try {
+      // Buscar por providerPaymentId o por metadata.preferenceId
+      const payment = await this.paymentModel.findOne({
+        $or: [
+          { providerPaymentId: preferenceId },
+          { 'metadata.preferenceId': preferenceId }
+        ]
+      });
+      
+      return payment;
+    } catch (error) {
+      this.logger.error('Error finding payment by preference ID:', error);
+      return null;
     }
   }
 
@@ -477,6 +520,474 @@ export class PaymentsService {
     } catch (error) {
       this.logger.error('Error cancelling payment by token:', error);
       throw new BadRequestException(`Payment cancellation failed: ${error.message}`);
+    }
+  }
+
+  // ==================== MERCADOPAGO METHODS ====================
+
+  async createMercadoPagoPaymentFromCart(
+    userId: string, 
+    checkoutDto: CartCheckoutDto
+  ): Promise<{ 
+    id: string; 
+    init_point: string; 
+    preferenceId: string 
+  }> {
+    try {
+      // Validar el carrito antes de proceder
+      const validation = await this.cartService.validateCartForCheckout(userId);
+      if (!validation.valid) {
+        throw new BadRequestException(`Cart validation failed: ${validation.errors.join(', ')}`);
+      }
+
+      // Obtener el carrito del usuario
+      const cart = await this.cartService.getCart(userId);
+      
+      if (!cart.items || cart.items.length === 0) {
+        throw new BadRequestException('Cart is empty');
+      }
+
+      // Preparar items para reserva de stock
+      const stockItems = cart.items.map(item => {
+        let productId: string;
+        
+        if (typeof item.product === 'string') {
+          productId = item.product;
+        } else if (item.product && typeof item.product === 'object') {
+          productId = (item.product as any)._id?.toString() || (item.product as any).toString();
+        } else {
+          productId = (item.product as any).toString();
+        }
+
+        return {
+          productId,
+          quantity: item.quantity
+        };
+      });
+
+      // Reservar stock antes de crear el pago
+      const stockReservation = await this.productsService.bulkReserveStock(stockItems);
+      if (!stockReservation.success) {
+        throw new BadRequestException(`Stock reservation failed: ${stockReservation.errors.join(', ')}`);
+      }
+
+      try {
+        // Preparar items para MercadoPago
+        const items = cart.items.map((item) => ({
+          title: (item.product as any).name,
+          description: (item.product as any).description || '',
+          quantity: item.quantity,
+          unit_price: (item.product as any).price,
+          currency_id: 'MXN', // Pesos mexicanos por defecto
+        }));
+
+        const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+        // Crear la preferencia de pago en MercadoPago
+        const mpResponse = await this.mercadoPagoService.createCheckoutPreference({
+          items,
+          externalReference: cart._id?.toString() || '',
+          notificationUrl: `${baseUrl}/payments/webhook/mercadopago`,
+          backUrls: {
+            success: checkoutDto.returnUrl || `${frontendUrl}/payment/success`,
+            failure: checkoutDto.cancelUrl || `${frontendUrl}/payment/failure`,
+            pending: `${frontendUrl}/payment/pending`,
+          },
+          autoReturn: 'approved',
+          currency: 'MXN',
+        });
+
+        // Guardar el pago en la base de datos
+        const payment = new this.paymentModel({
+          userId,
+          provider: PaymentProvider.MERCADOPAGO,
+          providerPaymentId: mpResponse.id,
+          status: PaymentStatus.PENDING,
+          amount: items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0),
+          currency: 'MXN',
+          description: `Payment for cart ${cart._id}`,
+          orderId: cart._id,
+          items: items.map(item => ({
+            name: item.title,
+            description: item.description,
+            quantity: item.quantity,
+            price: item.unit_price,
+            currency: 'MXN',
+          })),
+          approvalUrl: mpResponse.init_point,
+          metadata: {
+            returnUrl: checkoutDto.returnUrl,
+            cancelUrl: checkoutDto.cancelUrl,
+            preferenceId: mpResponse.id,
+            shippingAddress: checkoutDto.shippingAddress,
+            shippingMethod: checkoutDto.shippingMethod || 'standard',
+          },
+        });
+
+        await payment.save();
+
+        this.logger.log(`MercadoPago payment created for user ${userId}: ${payment._id}`);
+
+        // Limpiar el carrito después de crear el pago exitosamente
+        await this.cartService.clearCart(userId);
+
+        return {
+          id: payment._id?.toString() || '',
+          init_point: mpResponse.init_point,
+          preferenceId: mpResponse.id,
+        };
+      } catch (error) {
+        // Si falla la creación del pago, liberar el stock reservado
+        for (const item of stockItems) {
+          await this.productsService.releaseStock(item.productId, item.quantity);
+        }
+        throw error;
+      }
+    } catch (error) {
+      this.logger.error('Error creating MercadoPago payment from cart:', error);
+      throw new BadRequestException(`Failed to create MercadoPago payment: ${error.message}`);
+    }
+  }
+
+  async createMercadoPagoPartialPaymentFromCart(
+    userId: string, 
+    partialCheckoutDto: PartialCheckoutDto
+  ): Promise<{ 
+    id: string; 
+    init_point: string; 
+    preferenceId: string 
+  }> {
+    try {
+      // Obtener el carrito del usuario
+      const cart = await this.cartService.getCart(userId);
+      
+      if (!cart.items || cart.items.length === 0) {
+        throw new BadRequestException('Cart is empty');
+      }
+
+      // Validar que todos los items solicitados existen en el carrito
+      const selectedItems: Array<{
+        cartItem: any;
+        requestedQuantity: number;
+      }> = [];
+
+      for (const partialItem of partialCheckoutDto.items) {
+        const cartItem = cart.items.find(item => item._id.toString() === partialItem.itemId);
+        if (!cartItem) {
+          throw new BadRequestException(`Item ${partialItem.itemId} not found in cart`);
+        }
+
+        if (partialItem.quantity > cartItem.quantity) {
+          throw new BadRequestException(
+            `Requested quantity (${partialItem.quantity}) exceeds cart quantity (${cartItem.quantity}) for item ${partialItem.itemId}`
+          );
+        }
+
+        // Extraer ID del producto correctamente
+        let productId: string;
+        if (typeof cartItem.product === 'string') {
+          productId = cartItem.product;
+        } else if (cartItem.product && typeof cartItem.product === 'object') {
+          productId = (cartItem.product as any)._id?.toString() || (cartItem.product as any).toString();
+        } else {
+          productId = (cartItem.product as any).toString();
+        }
+
+        // Validar stock disponible
+        const stockCheck = await this.productsService.checkStockAvailability(
+          productId,
+          partialItem.quantity
+        );
+
+        if (!stockCheck.available) {
+          throw new BadRequestException(`Insufficient stock for item ${partialItem.itemId}: ${stockCheck.message}`);
+        }
+
+        selectedItems.push({
+          cartItem,
+          requestedQuantity: partialItem.quantity
+        });
+      }
+
+      // Preparar items para reserva de stock
+      const stockItems = selectedItems.map(item => {
+        let productId: string;
+        if (typeof item.cartItem.product === 'string') {
+          productId = item.cartItem.product;
+        } else if (item.cartItem.product && typeof item.cartItem.product === 'object') {
+          productId = (item.cartItem.product as any)._id?.toString() || (item.cartItem.product as any).toString();
+        } else {
+          productId = (item.cartItem.product as any).toString();
+        }
+
+        return {
+          productId,
+          quantity: item.requestedQuantity
+        };
+      });
+
+      // Reservar stock
+      const stockReservation = await this.productsService.bulkReserveStock(stockItems);
+      if (!stockReservation.success) {
+        throw new BadRequestException(`Stock reservation failed: ${stockReservation.errors.join(', ')}`);
+      }
+
+      try {
+        // Preparar items para MercadoPago
+        const items = selectedItems.map((item) => {
+          const product = item.cartItem.product as any;
+          return {
+            title: product.name,
+            description: product.description || '',
+            quantity: item.requestedQuantity,
+            unit_price: product.price,
+            currency_id: 'MXN',
+          };
+        });
+
+        const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+        // Crear la preferencia de pago en MercadoPago
+        const mpResponse = await this.mercadoPagoService.createCheckoutPreference({
+          items,
+          externalReference: cart._id?.toString() || '',
+          notificationUrl: `${baseUrl}/payments/webhook/mercadopago`,
+          backUrls: {
+            success: partialCheckoutDto.returnUrl || `${frontendUrl}/payment/success`,
+            failure: partialCheckoutDto.cancelUrl || `${frontendUrl}/payment/failure`,
+            pending: `${frontendUrl}/payment/pending`,
+          },
+          autoReturn: 'approved',
+          currency: 'MXN',
+        });
+
+        // Guardar el pago en la base de datos
+        const totalAmount = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+        
+        const payment = new this.paymentModel({
+          userId,
+          provider: PaymentProvider.MERCADOPAGO,
+          providerPaymentId: mpResponse.id,
+          status: PaymentStatus.PENDING,
+          amount: totalAmount,
+          currency: 'MXN',
+          description: `Partial payment for cart ${cart._id}`,
+          orderId: cart._id,
+          items: items.map(item => ({
+            name: item.title,
+            description: item.description,
+            quantity: item.quantity,
+            price: item.unit_price,
+            currency: 'MXN',
+          })),
+          approvalUrl: mpResponse.init_point,
+          metadata: {
+            returnUrl: partialCheckoutDto.returnUrl,
+            cancelUrl: partialCheckoutDto.cancelUrl,
+            preferenceId: mpResponse.id,
+            shippingAddress: partialCheckoutDto.shippingAddress,
+            shippingMethod: partialCheckoutDto.shippingMethod || 'standard',
+          },
+        });
+
+        await payment.save();
+
+        this.logger.log(`MercadoPago partial payment created for user ${userId}: ${payment._id}`);
+
+        // Actualizar cantidades en el carrito
+        for (const selectedItem of selectedItems) {
+          const cartItem = selectedItem.cartItem;
+          const newQuantity = cartItem.quantity - selectedItem.requestedQuantity;
+          
+          if (newQuantity <= 0) {
+            await this.cartService.removeFromCart(userId, cartItem._id.toString());
+          } else {
+            await this.cartService.updateCartItem(userId, cartItem._id.toString(), { quantity: newQuantity });
+          }
+        }
+
+        return {
+          id: payment._id?.toString() || '',
+          init_point: mpResponse.init_point,
+          preferenceId: mpResponse.id,
+        };
+      } catch (error) {
+        // Si falla la creación del pago, liberar el stock reservado
+        for (const item of stockItems) {
+          await this.productsService.releaseStock(item.productId, item.quantity);
+        }
+        throw error;
+      }
+    } catch (error) {
+      this.logger.error('Error creating MercadoPago partial payment from cart:', error);
+      throw new BadRequestException(`Failed to create MercadoPago partial payment: ${error.message}`);
+    }
+  }
+
+  // ==================== MERCADOPAGO V2 (CON FORMATO SIMPLE SHIPPING) ====================
+  
+  async createMercadoPagoPaymentFromCartV2(
+    userId: string,
+    checkoutDto: MercadoPagoCheckoutDto
+  ): Promise<{ 
+    id: string; 
+    init_point: string; 
+    preferenceId: string 
+  }> {
+    try {
+      // Validar el carrito antes de proceder
+      const validation = await this.cartService.validateCartForCheckout(userId);
+      if (!validation.valid) {
+        throw new BadRequestException(`Cart validation failed: ${validation.errors.join(', ')}`);
+      }
+
+      // Obtener el carrito del usuario
+      const cart = await this.cartService.getCart(userId);
+      
+      if (!cart.items || cart.items.length === 0) {
+        throw new BadRequestException('Cart is empty');
+      }
+
+      // Preparar items para reserva de stock
+      const stockItems = cart.items.map(item => {
+        let productId: string;
+        
+        if (typeof item.product === 'string') {
+          productId = item.product;
+        } else if (item.product && typeof item.product === 'object') {
+          productId = (item.product as any)._id?.toString() || (item.product as any).toString();
+        } else {
+          productId = (item.product as any).toString();
+        }
+
+        return {
+          productId,
+          quantity: item.quantity
+        };
+      });
+
+      // Reservar stock antes de crear el pago
+      const stockReservation = await this.productsService.bulkReserveStock(stockItems);
+      if (!stockReservation.success) {
+        throw new BadRequestException(`Stock reservation failed: ${stockReservation.errors.join(', ')}`);
+      }
+
+      try {
+        // Preparar items para MercadoPago
+        const items = cart.items.map((item) => ({
+          title: (item.product as any).name,
+          description: (item.product as any).description || '',
+          quantity: item.quantity,
+          unit_price: (item.product as any).price,
+          currency_id: 'MXN',
+        }));
+
+        // IMPORTANTE: Agregar el costo de envío como un item adicional
+        // Esto suma el shipping.price al total que se cobra en MercadoPago
+        let shippingCost = 0;
+        if (checkoutDto?.shippingOption?.price && checkoutDto.shippingOption.price > 0) {
+          shippingCost = checkoutDto.shippingOption.price;
+          items.push({
+            title: `Envío - ${checkoutDto.shippingOption.carrier} (${checkoutDto.shippingOption.service})`,
+            description: `Entrega en ${checkoutDto.shippingOption.days || 'N/A'}`,
+            quantity: 1,
+            unit_price: shippingCost,
+            currency_id: 'MXN',
+          });
+        }
+
+        const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+        // Crear la preferencia de pago en MercadoPago
+        const mpResponse = await this.mercadoPagoService.createCheckoutPreference({
+          items,
+          externalReference: cart._id?.toString() || '',
+          notificationUrl: `${baseUrl}/payments/webhook/mercadopago`,
+          backUrls: {
+            success: checkoutDto.returnUrl || `${frontendUrl}/payment/success`,
+            failure: checkoutDto.cancelUrl || `${frontendUrl}/payment/failure`,
+            pending: `${frontendUrl}/payment/pending`,
+          },
+          autoReturn: 'approved',
+          currency: 'MXN',
+        });
+
+        // Calcular total (productos + envío)
+        const totalAmount = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+
+        // Guardar el pago en la base de datos con toda la información
+        const payment = new this.paymentModel({
+          userId,
+          provider: PaymentProvider.MERCADOPAGO,
+          providerPaymentId: mpResponse.id,
+          status: PaymentStatus.PENDING,
+          amount: totalAmount,
+          currency: 'MXN',
+          description: `Payment for cart ${cart._id}`,
+          orderId: cart._id,
+          items: items.map(item => ({
+            name: item.title,
+            description: item.description,
+            quantity: item.quantity,
+            price: item.unit_price,
+            currency: 'MXN',
+          })),
+          approvalUrl: mpResponse.init_point,
+          metadata: {
+            returnUrl: checkoutDto?.returnUrl,
+            cancelUrl: checkoutDto?.cancelUrl,
+            preferenceId: mpResponse.id,
+            // Guardar información de contacto y dirección (si viene)
+            shippingContact: checkoutDto?.simpleShipping ? {
+              email: checkoutDto.simpleShipping.contact.emailOrPhone,
+              firstName: checkoutDto.simpleShipping.contact.firstName,
+              lastName: checkoutDto.simpleShipping.contact.lastName,
+              phone: checkoutDto.simpleShipping.contact.phone,
+            } : null,
+            shippingAddress: checkoutDto?.simpleShipping ? {
+              street: checkoutDto.simpleShipping.address.addressLine,
+              city: checkoutDto.simpleShipping.address.city,
+              state: checkoutDto.simpleShipping.address.state,
+              zip: checkoutDto.simpleShipping.address.postalCode,
+              country: checkoutDto.simpleShipping.address.country,
+            } : null,
+            // Guardar información de envío (si viene)
+            shippingOption: checkoutDto?.shippingOption ? {
+              carrier: checkoutDto.shippingOption.carrier,
+              service: checkoutDto.shippingOption.service,
+              price: checkoutDto.shippingOption.price,
+              days: checkoutDto.shippingOption.days,
+              serviceId: checkoutDto.shippingOption.service_id,
+              currency: checkoutDto.shippingOption.currency || 'MXN',
+            } : null,
+          },
+        });
+
+        await payment.save();
+
+        this.logger.log(`MercadoPago payment created for user ${userId}: ${payment._id}`);
+
+        // Limpiar el carrito después de crear el pago exitosamente
+        await this.cartService.clearCart(userId);
+
+        return {
+          id: payment._id?.toString() || '',
+          init_point: mpResponse.init_point,
+          preferenceId: mpResponse.id,
+        };
+      } catch (error) {
+        // Si falla la creación del pago, liberar el stock reservado
+        for (const item of stockItems) {
+          await this.productsService.releaseStock(item.productId, item.quantity);
+        }
+        throw error;
+      }
+    } catch (error) {
+      this.logger.error('Error creating MercadoPago payment from cart V2:', error);
+      throw new BadRequestException(`Failed to create MercadoPago payment: ${error.message}`);
     }
   }
 }

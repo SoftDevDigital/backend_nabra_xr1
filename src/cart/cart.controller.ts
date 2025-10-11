@@ -16,6 +16,7 @@ import { AddToCartDto } from './dtos/add-to-cart.dto';
 import { UpdateCartDto } from './dtos/update-cart.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { PaymentsService } from '../payments/payments.service';
+import { CartCheckoutDto } from '../payments/dtos/cart-checkout.dto';
 
 @Controller('cart')
 export class CartController {
@@ -55,13 +56,13 @@ export class CartController {
   @Post('checkout')
   async checkoutCart(
     @Request() req,
-    @Query('returnUrl') returnUrl?: string,
-    @Query('cancelUrl') cancelUrl?: string,
+    @Body() checkoutDto: CartCheckoutDto,
   ) {
-    return this.paymentsService.createPaymentFromCart(
+    // Redirige a la ruta principal de MercadoPago
+    // La ruta real es: POST /payments/mercadopago/checkout
+    return this.paymentsService.createMercadoPagoPaymentFromCart(
       req.user.userId,
-      returnUrl,
-      cancelUrl,
+      checkoutDto,
     );
   }
 

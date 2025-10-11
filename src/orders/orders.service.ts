@@ -148,6 +148,9 @@ export class OrdersService {
     }>;
     totalAmount: number;
     currency: string;
+    shippingAddress?: any;
+    shippingContact?: any;
+    shippingOption?: any;
   }) {
     try {
       const orderItems: Array<{
@@ -185,12 +188,12 @@ export class OrdersService {
         currency: paymentData.currency,
         status: 'paid', // Ya está pagado
         paymentId: paymentData.paymentId,
-        shippingAddress: {
+        shippingAddress: paymentData.shippingAddress || {
           street: 'Pending',
           city: 'Pending', 
           zip: 'Pending',
           country: 'Pending'
-        }, // Dirección pendiente
+        },
         createdAt: new Date(),
       });
 
