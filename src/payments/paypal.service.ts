@@ -76,8 +76,8 @@ export class PayPalService {
           brandName: 'Nabra XR',
           landingPage: OrderApplicationContextLandingPage.NoPreference,
           userAction: OrderApplicationContextUserAction.PayNow,
-          returnUrl: `https://9dbdcf7272a6.ngrok-free.app/payments/paypal/success`,
-          cancelUrl: `https://9dbdcf7272a6.ngrok-free.app/payments/paypal/cancel`,
+          returnUrl: `https://api.nabra.mx/payments/paypal/success`,
+          cancelUrl: `https://api.nabra.mx/payments/paypal/cancel`,
         },
       };
 
