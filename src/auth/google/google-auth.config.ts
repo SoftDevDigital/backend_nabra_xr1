@@ -34,9 +34,7 @@ export const googleAuthConfig = {
     cookieSameSite: 'lax' as const,
     
     // Configuración de CORS
-    allowedOrigins: process.env.NODE_ENV === 'production' 
-      ? ['https://yourdomain.com'] 
-      : ['http://localhost:3000', 'http://localhost:3001'],
+    allowedOrigins: ['https://api.nabra.mx', 'https://nabra.mx', 'http://localhost:3000', 'http://localhost:3001'],
   },
   
   // Configuración de validación
