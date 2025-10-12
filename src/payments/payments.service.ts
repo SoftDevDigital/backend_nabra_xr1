@@ -6,8 +6,8 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import { Model, Connection, ClientSession } from 'mongoose';
 import { Payment, PaymentDocument, PaymentStatus, PaymentProvider } from './schemas/payment.schema';
 import { CreatePaymentDto } from './dtos/create-payment.dto';
 import { PaymentResponseDto } from './dtos/payment-response.dto';
@@ -30,6 +30,7 @@ export class PaymentsService {
 
   constructor(
     @InjectModel(Payment.name) private paymentModel: Model<PaymentDocument>,
+    @InjectConnection() private connection: Connection,
     private mpService: MercadoPagoService,
     @Inject(forwardRef(() => CartService)) private cartService: CartService,
     private productsService: ProductsService,
@@ -241,6 +242,8 @@ export class PaymentsService {
           shippingData: checkoutData.shippingData || null,
           simpleShipping: checkoutData.simpleShipping || null,
           shippingOption: checkoutData.shippingOption || null,
+          shippingAddress: checkoutData.shippingAddress || null,
+          shippingContact: checkoutData.shippingContact || null,
           cartItems: cart.items.map((item: any) => ({
             cartItemId: item._id.toString(),
             productId: (item.product as any)._id?.toString(),
@@ -293,6 +296,8 @@ export class PaymentsService {
             shippingData: checkoutData.shippingData || null,
             simpleShipping: checkoutData.simpleShipping || null,
             shippingOption: checkoutData.shippingOption || null,
+            shippingAddress: checkoutData.shippingAddress || null,
+            shippingContact: checkoutData.shippingContact || null,
             shippingCost: shippingCost,
             timestamp: Date.now(),
             userId: userId
@@ -538,72 +543,27 @@ export class PaymentsService {
             // Continuar con la redirección pero sin crear orden duplicada
             createdOrderId = (existingOrder as any)._id?.toString() || null;
           } else {
-            // Actualizar estado del pago
-            payment.status = PaymentStatus.COMPLETED;
-            payment.captureId = String(params.paymentId);
-            await payment.save();
-
-            // Crear orden automáticamente
+            // ✅ TRANSACCIÓN: Actualizar pago + crear orden + limpiar carrito
+            // Preparar datos antes de iniciar la transacción
+            let userInfo: any = null;
             try {
-            const userInfo = await this.getUserInfo(payment.userId.toString());
-            console.log(`📧 [PAYMENT SERVICE] Creando orden desde pago exitoso para usuario: ${payment.userId}, email: ${userInfo.email}`);
-            const order = await this.ordersService.createOrderFromPayment({
-              userId: payment.userId.toString(),
-              paymentId: (payment as any)._id.toString(),
-              items: payment.items.map((it) => ({ 
-                name: it.name, 
-                quantity: it.quantity, 
-                price: it.price 
-              })),
-              totalAmount: payment.amount,
-              currency: payment.currency,
-              customerEmail: userInfo.email,
-              customerName: `${userInfo.firstName} ${userInfo.lastName}`,
-              shippingData: payment.metadata?.shippingData || null,
-              simpleShipping: payment.metadata?.simpleShipping || null,
-              shippingOption: payment.metadata?.shippingOption || null,
-              shippingCost: payment.metadata?.shippingCost || 0,
-            });
-            console.log(`✅ [PAYMENT SERVICE] Orden ${order._id} creada exitosamente, se enviará email a: ${userInfo.email}`);
-            this.logger.log(`Order ${order._id} creada desde retorno de Mercado Pago`);
-            createdOrderId = (order as any)._id?.toString() || null;
-
-            // Generar envío automáticamente si hay datos de envío
-            console.log(`🔍 [PAYMENT-RETURN] Verificando datos de envío:`, {
-              hasShippingData: !!payment.metadata?.shippingData,
-              shippingCost: payment.metadata?.shippingCost,
-              orderId: (order as any)._id,
-              metadataKeys: Object.keys(payment.metadata || {})
-            });
-            
-            if (payment.metadata?.shippingData && payment.metadata?.shippingCost > 0) {
-              try {
-                console.log(`🚚 [PAYMENT-RETURN] Generando envío automático para orden: ${(order as any)._id}`);
-                await this.ordersService.generateShipmentForOrder((order as any)._id.toString(), payment.metadata.shippingData);
-                console.log(`✅ [PAYMENT-RETURN] Envío generado exitosamente para orden: ${(order as any)._id}`);
-              } catch (shipmentError) {
-                console.error(`❌ [PAYMENT-RETURN] Error generando envío para orden ${(order as any)._id}:`, shipmentError);
-                this.logger.error(`Failed to generate shipment for order ${(order as any)._id}:`, shipmentError);
-                // No lanzamos el error para no afectar la creación de la orden
-              }
-            } else {
-              console.log(`ℹ️ [PAYMENT-RETURN] No hay datos de envío para orden: ${(order as any)._id} - omitiendo generación de envío`);
+              userInfo = await this.getUserInfo(payment.userId.toString());
+            } catch (error) {
+              console.log(`⚠️ [PAYMENT-RETURN] No se pudo obtener email del usuario ${payment.userId}`);
             }
 
-            // Manejar carrito según tipo de pago
-            if (payment.metadata?.isPartial) {
-              // Compra parcial: actualizar cantidades en el carrito
-              await this.handlePartialCartUpdate(payment);
-            } else {
-              // Compra completa: limpiar carrito
-              await this.cartService.clearCart(payment.userId.toString());
-              this.logger.log(`Cart cleared for user ${payment.userId} after successful MP return`);
-            }
-          } catch (orderError) {
-            this.logger.error('No se pudo crear la orden desde retorno MP', orderError);
-            // Si no se puede obtener email del usuario, crear orden sin email
+            const session = await this.connection.startSession();
+            session.startTransaction();
+
             try {
-              console.log(`⚠️ [PAYMENT SERVICE] No se pudo obtener email del usuario ${payment.userId}, creando orden sin email de confirmación`);
+              this.logger.log(`🔒 [TRANSACTION-RETURN] Starting payment update + order creation + cart cleanup for user ${payment.userId}`);
+
+              // Actualizar estado del pago dentro de la transacción
+              payment.status = PaymentStatus.COMPLETED;
+              payment.captureId = String(params.paymentId);
+              await payment.save({ session });
+
+              console.log(`📧 [PAYMENT-RETURN] Creando orden para usuario: ${payment.userId}`);
               const order = await this.ordersService.createOrderFromPayment({
                 userId: payment.userId.toString(),
                 paymentId: (payment as any)._id.toString(),
@@ -614,30 +574,40 @@ export class PaymentsService {
                 })),
                 totalAmount: payment.amount,
                 currency: payment.currency,
+                customerEmail: userInfo?.email,
+                customerName: userInfo ? `${userInfo.firstName} ${userInfo.lastName}` : undefined,
                 shippingData: payment.metadata?.shippingData || null,
+                simpleShipping: payment.metadata?.simpleShipping || null,
+                shippingOption: payment.metadata?.shippingOption || null,
                 shippingCost: payment.metadata?.shippingCost || 0,
-                // Sin email - no se enviará confirmación
-              });
-              console.log(`⚠️ [PAYMENT SERVICE] Orden ${order._id} creada SIN email de confirmación para usuario ${payment.userId}`);
-              this.logger.warn(`Order ${order._id} creada SIN email de confirmación para usuario ${payment.userId}`);
+              }, session); // ✅ Pasar session
+
+              console.log(`✅ [PAYMENT-RETURN] Orden ${order._id} creada exitosamente`);
               createdOrderId = (order as any)._id?.toString() || null;
 
-              // ========== DRENVÍO DESHABILITADO TEMPORALMENTE ==========
-              // Generar envío automáticamente si hay datos de envío (incluso sin email)
-              // if (payment.metadata?.shippingData && payment.metadata?.shippingCost > 0) {
-              //   try {
-              //     console.log(`🚚 [PAYMENT-FALLBACK] Generando envío automático para orden: ${order._id}`);
-              //     await this.ordersService.generateShipmentForOrder((order as any)._id.toString(), payment.metadata.shippingData);
-              //     console.log(`✅ [PAYMENT-FALLBACK] Envío generado exitosamente para orden: ${order._id}`);
-              //   } catch (shipmentError) {
-              //     console.error(`❌ [PAYMENT-FALLBACK] Error generando envío para orden ${order._id}:`, shipmentError);
-              //     this.logger.error(`Failed to generate shipment for order ${order._id}:`, shipmentError);
-              //   }
-              // }
-              // ========== FIN DRENVÍO DESHABILITADO ==========
-            } catch (fallbackError) {
-              this.logger.error('Error crítico: No se pudo crear la orden ni siquiera sin email', fallbackError);
-            }
+              // Manejar carrito según tipo de pago
+              if (payment.metadata?.isPartial) {
+                console.log(`🛒 [PAYMENT-RETURN] Procesando pago parcial...`);
+                await this.handlePartialCartUpdate(payment);
+              } else {
+                console.log(`🛒 [PAYMENT-RETURN] Limpiando carrito para usuario: ${payment.userId}`);
+                await this.cartService.clearCart(payment.userId.toString(), session); // ✅ Pasar session
+                this.logger.log(`Cart cleared for user ${payment.userId} after successful MP return`);
+              }
+
+              // Si todo salió bien, commitear la transacción
+              await session.commitTransaction();
+              this.logger.log(`✅ [TRANSACTION-RETURN] Payment + order + cart cleanup completed successfully`);
+
+            } catch (error) {
+              // Si algo falla, hacer rollback automático
+              await session.abortTransaction();
+              this.logger.error(`❌ [TRANSACTION-RETURN] Failed, rolling back:`, error);
+              console.error('❌ [PAYMENT-RETURN] Error creando orden (rollback aplicado):', error);
+              
+            } finally {
+              // Siempre cerrar la sesión
+              session.endSession();
             }
           }
         } else if (payment && payment.status === PaymentStatus.COMPLETED) {
@@ -816,6 +786,8 @@ export class PaymentsService {
         const finalShippingData = shippingDataFromCache?.shippingData || payment.metadata?.shippingData;
         const finalSimpleShipping = shippingDataFromCache?.simpleShipping || payment.metadata?.simpleShipping;
         const finalShippingOption = shippingDataFromCache?.shippingOption || payment.metadata?.shippingOption;
+        const finalShippingAddress = shippingDataFromCache?.shippingAddress || payment.metadata?.shippingAddress;
+        const finalShippingContact = shippingDataFromCache?.shippingContact || payment.metadata?.shippingContact;
         const finalShippingCost = shippingDataFromCache?.shippingCost || payment.metadata?.shippingCost || 0;
 
         console.log(`🔍 [WEBHOOK] ===== DATOS DE ENVÍO PARA CREAR ORDEN =====`);
@@ -836,45 +808,52 @@ export class PaymentsService {
           console.log(`🔍 [WEBHOOK] ❌ SIN DATOS DE ENVÍO`);
         }
 
-        // Crear orden
+        // ✅ TRANSACCIÓN: Crear orden + limpiar carrito de forma atómica
+        // Preparar datos antes de iniciar la transacción
+        let customerEmail: string | undefined;
+        let customerName: string | undefined;
+        
+        // Primero intentar desde shippingContact/simpleShipping
+        if (finalShippingContact?.email) {
+          customerEmail = finalShippingContact.email;
+          customerName = `${finalShippingContact.firstName || ''} ${finalShippingContact.lastName || ''}`.trim();
+        } else if (finalSimpleShipping?.contact?.emailOrPhone) {
+          customerEmail = finalSimpleShipping.contact.emailOrPhone;
+          customerName = `${finalSimpleShipping.contact.firstName || ''} ${finalSimpleShipping.contact.lastName || ''}`.trim();
+        }
+        
+        // Si no hay email aún, intentar desde getUserInfo
+        if (!customerEmail) {
+          try {
+            const userInfo = await this.getUserInfo(payment.userId.toString());
+            customerEmail = userInfo.email;
+            customerName = customerName || `${userInfo.firstName} ${userInfo.lastName}`;
+          } catch (error) {
+            console.log(`⚠️ [WEBHOOK] No se pudo obtener email del usuario ${payment.userId}`);
+          }
+        }
+
+        // Iniciar transacción para crear orden + limpiar carrito
+        const session = await this.connection.startSession();
+        session.startTransaction();
+
         try {
-          const userInfo = await this.getUserInfo(payment.userId.toString());
+          this.logger.log(`🔒 [TRANSACTION] Starting order creation + cart cleanup for user ${payment.userId}`);
+          console.log(`📧 [WEBHOOK] Creando orden con email: ${customerEmail}, nombre: ${customerName}`);
+
           const order = await this.ordersService.createOrderFromPayment({
             userId: payment.userId.toString(),
             paymentId: (payment as any)._id.toString(),
             items: payment.items.map((it) => ({ name: it.name, quantity: it.quantity, price: it.price })),
             totalAmount: payment.amount,
             currency: payment.currency,
-            customerEmail: userInfo.email,
-            customerName: `${userInfo.firstName} ${userInfo.lastName}`,
+            customerEmail: customerEmail || undefined,
+            customerName: customerName || undefined,
             shippingData: finalShippingData || null,
             simpleShipping: finalSimpleShipping || null,
             shippingOption: finalShippingOption || null,
             shippingCost: finalShippingCost,
-          });
-
-          // ========== DRENVÍO DESHABILITADO TEMPORALMENTE ==========
-          // Generar envío automáticamente si hay datos de envío (DESPUÉS de crear orden)
-          // console.log(`🔍 [PAYMENT-WEBHOOK] Verificando datos de envío para generar DrEnvío:`, {
-          //   hasShippingData: !!finalShippingData,
-          //   shippingCost: finalShippingCost,
-          //   orderId: (order as any)._id
-          // });
-          
-          // if (finalShippingData && finalShippingCost > 0) {
-          //   try {
-          //     console.log(`🚚 [PAYMENT-WEBHOOK] Generando envío automático para orden: ${(order as any)._id}`);
-          //     await this.ordersService.generateShipmentForOrder((order as any)._id.toString(), finalShippingData);
-          //     console.log(`✅ [PAYMENT-WEBHOOK] Envío generado exitosamente para orden: ${(order as any)._id}`);
-          //   } catch (shipmentError) {
-          //     console.error(`❌ [PAYMENT-WEBHOOK] Error generando envío para orden ${(order as any)._id}:`, shipmentError);
-          //     this.logger.error(`Failed to generate shipment for order ${(order as any)._id}:`, shipmentError);
-          //     // No lanzamos el error para no afectar la creación de la orden
-          //   }
-          // } else {
-          //   console.log(`ℹ️ [PAYMENT-WEBHOOK] No hay datos de envío para orden: ${(order as any)._id} - omitiendo generación de envío`);
-          // }
-          // ========== FIN DRENVÍO DESHABILITADO ==========
+          }, session); // ✅ Pasar session
 
           // Manejar carrito según tipo de pago
           if (payment.metadata?.isPartial) {
@@ -882,12 +861,51 @@ export class PaymentsService {
             await this.handlePartialCartUpdate(payment);
           } else {
             console.log(`🛒 [WEBHOOK] Procesando pago completo, limpiando carrito para usuario: ${payment.userId}`);
-            await this.cartService.clearCart(payment.userId.toString());
+            await this.cartService.clearCart(payment.userId.toString(), session); // ✅ Pasar session
             console.log(`✅ [WEBHOOK] Carrito limpiado exitosamente para usuario: ${payment.userId}`);
           }
-        } catch (e) {
-          console.error('❌ [MERCADOPAGO-WEBHOOK] Error creando orden:', e);
-          this.logger.error('No se pudo crear la orden desde MP', e);
+
+          // Si todo salió bien, commitear la transacción
+          await session.commitTransaction();
+          this.logger.log(`✅ [TRANSACTION] Order creation + cart cleanup completed successfully`);
+
+          // Enviar email de confirmación DESPUÉS de la transacción exitosa
+          if (customerEmail && customerName) {
+            console.log(`📧 [WEBHOOK] Enviando email de confirmación a: ${customerEmail}`);
+            try {
+              await this.ordersService['orderNotificationService'].sendOrderConfirmationEmail(
+                order, 
+                customerEmail, 
+                customerName
+              );
+              console.log(`✅ [WEBHOOK] Email de confirmación enviado exitosamente`);
+            } catch (emailError) {
+              console.log(`❌ [WEBHOOK] Error enviando email (no afecta la orden):`, emailError);
+              this.logger.error(`Failed to send order confirmation email:`, emailError);
+            }
+          }
+
+        } catch (error) {
+          // Si algo falla, hacer rollback automático
+          await session.abortTransaction();
+          this.logger.error(`❌ [TRANSACTION] Order creation + cart cleanup failed, rolling back:`, error);
+          console.error('❌ [MERCADOPAGO-WEBHOOK] Error creando orden (rollback aplicado):', error);
+          
+          // IMPORTANTE: Revertir el estado del pago a PENDING para permitir reintento
+          await this.paymentModel.updateOne(
+            { _id: (payment as any)._id },
+            { 
+              $set: { 
+                status: PaymentStatus.PENDING,
+                errorMessage: `Order creation failed: ${error.message}`
+              } 
+            }
+          );
+          console.log(`⚠️ [WEBHOOK] Pago revertido a PENDING para permitir reintento`);
+
+        } finally {
+          // Siempre cerrar la sesión
+          session.endSession();
         }
       } else if (status === 'rejected' || status === 'cancelled' || status === 'cancelled_by_user') {
         payment.status = PaymentStatus.CANCELLED;
@@ -909,6 +927,10 @@ export class PaymentsService {
       .limit(limit)
       .skip(offset)
       .exec();
+  }
+
+  async findByMercadoPagoPreference(preferenceId: string): Promise<PaymentDocument | null> {
+    return this.paymentModel.findOne({ providerPaymentId: preferenceId }).exec();
   }
 
 

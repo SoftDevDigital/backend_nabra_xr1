@@ -5,8 +5,8 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import { Model, Connection, ClientSession } from 'mongoose';
 import { Cart } from './schemas/cart.schema';
 import { AddToCartDto } from './dtos/add-to-cart.dto';
 import { UpdateCartDto } from './dtos/update-cart.dto';
@@ -18,6 +18,7 @@ import { DiscountCalculatorService } from '../promotions/discount-calculator.ser
 export class CartService {
   constructor(
     @InjectModel(Cart.name) private cartModel: Model<Cart>,
+    @InjectConnection() private connection: Connection,
     @Inject(forwardRef(() => ProductsService)) private productsService: ProductsService,
     @Inject(forwardRef(() => DiscountCalculatorService)) private discountCalculatorService: DiscountCalculatorService,
   ) {}
@@ -33,9 +34,9 @@ export class CartService {
   }
 
   async addToCart(userId: string, addToCartDto: AddToCartDto) {
-    // Validar que el producto existe
-    const product = await this.productsService.findById(addToCartDto.productId);
-    if (!product) {
+    // Validar que el producto existe y obtener info con promociones
+    const productWithPromotions = await this.productsService.findByIdWithPromotions(addToCartDto.productId);
+    if (!productWithPromotions) {
       throw new NotFoundException('Product not found');
     }
 
@@ -50,11 +51,11 @@ export class CartService {
     }
 
     // Validar talla si el producto la requiere
-    if (product.sizes && product.sizes.length > 0 && !addToCartDto.size) {
+    if (productWithPromotions.sizes && productWithPromotions.sizes.length > 0 && !addToCartDto.size) {
       throw new BadRequestException('Size is required for this product');
     }
 
-    if (addToCartDto.size && product.sizes && !product.sizes.includes(addToCartDto.size)) {
+    if (addToCartDto.size && productWithPromotions.sizes && !productWithPromotions.sizes.includes(addToCartDto.size)) {
       throw new BadRequestException(`Size ${addToCartDto.size} is not available for this product`);
     }
 
@@ -98,7 +99,29 @@ export class CartService {
       });
     }
 
-    return await cart.save();
+    await cart.save();
+
+    // ✅ RETORNAR CARRITO CON PROMOCIONES APLICADAS AUTOMÁTICAMENTE
+    // Esto permite que el frontend muestre inmediatamente el precio con descuento
+    const cartWithPromotions = await this.getCartSummaryWithDiscounts(userId);
+    
+    return {
+      success: true,
+      message: productWithPromotions.hasPromotion 
+        ? `Producto agregado con promoción "${productWithPromotions.promotionName}" aplicada`
+        : 'Producto agregado al carrito',
+      cart: cartWithPromotions,
+      productAddedInfo: {
+        productId: addToCartDto.productId,
+        productName: productWithPromotions.name,
+        quantity: addToCartDto.quantity,
+        originalPrice: productWithPromotions.originalPrice,
+        finalPrice: productWithPromotions.finalPrice,
+        hasPromotion: productWithPromotions.hasPromotion,
+        promotionName: productWithPromotions.promotionName,
+        discountAmount: productWithPromotions.discountAmount,
+      }
+    };
   }
 
   async updateCartItem(
@@ -165,7 +188,10 @@ export class CartService {
       cart.items[itemIndex].size = updateCartDto.size;
     }
 
-    return await cart.save();
+    await cart.save();
+
+    // ✅ RETORNAR CARRITO ACTUALIZADO CON PROMOCIONES
+    return await this.getCartSummaryWithDiscounts(userId);
   }
 
   async removeFromCart(userId: string, itemId: string) {
@@ -177,10 +203,13 @@ export class CartService {
     }
 
     cart.items = cart.items.filter((item) => item._id.toString() !== itemId);
-    return await cart.save();
+    await cart.save();
+
+    // ✅ RETORNAR CARRITO ACTUALIZADO CON PROMOCIONES
+    return await this.getCartSummaryWithDiscounts(userId);
   }
 
-  async clearCart(userId: string) {
+  async clearCart(userId: string, session?: ClientSession) {
     console.log('🧹 [CART-SERVICE] Limpiando carrito completamente para usuario:', userId);
     
     // Limpiar TODA la información del carrito
@@ -191,7 +220,7 @@ export class CartService {
           items: []
         } 
       }
-    ).exec();
+    ).session(session || null).exec();
     
     console.log('✅ [CART-SERVICE] Carrito limpiado completamente');
     return { success: true } as const;

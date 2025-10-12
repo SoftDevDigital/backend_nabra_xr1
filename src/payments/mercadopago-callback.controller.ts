@@ -17,7 +17,9 @@ import { PaymentsService } from './payments.service';
 import { OrdersService } from '../orders/orders.service';
 import { NotificationsService } from '../notifications/services/notifications.service';
 import { Public } from '../common/decorators/public.decorator';
-import { MercadoPagoCheckoutDto } from './dtos/simple-shipping.dto';
+import { MercadoPagoCheckoutDto } from './dtos/mercadopago-checkout.dto';
+import { PaymentStatus } from './schemas/payment.schema';
+import { CartService } from '../cart/cart.service';
 
 @Controller('payments/mercadopago')
 export class MercadoPagoCallbackController {
@@ -27,6 +29,7 @@ export class MercadoPagoCallbackController {
     private paymentsService: PaymentsService,
     @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService,
     private notificationsService: NotificationsService,
+    private cartService: CartService,
   ) {}
 
   /**
@@ -41,13 +44,17 @@ export class MercadoPagoCallbackController {
     try {
       this.logger.log(`Creating MercadoPago checkout for user ${req.user.userId}`);
       
-      // Convertir simpleShipping a shippingAddress y shippingContact
+      // Preparar datos de checkout con envío
       const cartCheckout: any = {
         returnUrl: checkoutDto.returnUrl,
         cancelUrl: checkoutDto.cancelUrl,
       };
 
+      // Pasar simpleShipping completo para que se guarde en metadata
       if (checkoutDto.simpleShipping) {
+        cartCheckout.simpleShipping = checkoutDto.simpleShipping;
+        
+        // También convertir a formato shippingAddress y shippingContact para compatibilidad
         cartCheckout.shippingAddress = {
           street: checkoutDto.simpleShipping.address.addressLine,
           city: checkoutDto.simpleShipping.address.city,
@@ -69,7 +76,7 @@ export class MercadoPagoCallbackController {
       }
 
       // Crear el pago de MercadoPago desde el carrito
-      const result = await this.paymentsService.createMercadoPagoPaymentFromCart(
+      const result = await this.paymentsService.createMercadoPagoCheckoutFromCart(
         req.user.userId,
         cartCheckout
       );
@@ -121,31 +128,60 @@ export class MercadoPagoCallbackController {
 
       // Actualizar estado del pago a COMPLETED solo si está aprobado
       const internalPaymentId = (payment as any)._id.toString();
-      await this.paymentsService.updatePaymentStatus(internalPaymentId, 'completed');
+      await this.paymentsService.updatePaymentStatus(internalPaymentId, PaymentStatus.COMPLETED);
       this.logger.log(`Payment ${internalPaymentId} marked as COMPLETED`);
 
       // LIMPIAR EL CARRITO DEL USUARIO (solo cuando el pago es exitoso)
       const userId = payment.userId.toString();
-      await this.paymentsService.clearUserCart(userId);
+      await this.cartService.clearCart(userId);
       this.logger.log(`Cart cleared for user ${userId}`);
 
-      // RESTAR STOCK: Descontar el stock de los productos SOLO cuando el pago es exitoso
-      try {
-        for (const item of payment.items) {
-          if (item.productId) {
-            // Restar el stock del producto
-            await this.paymentsService.decrementProductStock(item.productId, item.quantity);
-            this.logger.log(`Stock decremented for product ${item.productId}: ${item.quantity} units`);
-          }
-        }
-      } catch (stockError) {
-        this.logger.error('Error decrementing stock:', stockError);
-        // No lanzar error, continuar con la creación de la orden
-        // TODO: Implementar compensación si falla (reversar pago o notificar admin)
-      }
+      // NOTA: El stock ya fue reservado cuando se creó el checkout.
+      // No es necesario decrementar nuevamente aquí.
 
       // Crear la orden automáticamente con la info guardada en metadata
       try {
+        // Extraer email y nombre del cliente desde metadata
+        const customerEmail = payment.metadata?.shippingContact?.email || 
+                            payment.metadata?.shippingContact?.emailOrPhone || 
+                            payment.metadata?.simpleShipping?.contact?.email ||
+                            payment.metadata?.simpleShipping?.contact?.emailOrPhone;
+        
+        const customerFirstName = payment.metadata?.shippingContact?.firstName || 
+                                payment.metadata?.simpleShipping?.contact?.firstName || 
+                                'Cliente';
+        const customerLastName = payment.metadata?.shippingContact?.lastName || 
+                               payment.metadata?.simpleShipping?.contact?.lastName || 
+                               '';
+        const customerName = `${customerFirstName} ${customerLastName}`.trim();
+
+        // Construir dirección de envío
+        let shippingAddress = payment.metadata?.shippingAddress;
+        
+        // Si no hay shippingAddress pero sí simpleShipping, convertirlo
+        if (!shippingAddress && payment.metadata?.simpleShipping?.address) {
+          const addr = payment.metadata.simpleShipping.address;
+          shippingAddress = {
+            street: addr.addressLine,
+            city: addr.city,
+            zip: addr.postalCode,
+            country: addr.country,
+            state: addr.state,
+          };
+        }
+
+        // Si aún no hay dirección, usar valores por defecto
+        if (!shippingAddress) {
+          shippingAddress = {
+            street: 'Pending',
+            city: 'Pending',
+            zip: 'Pending',
+            country: 'Pending',
+            state: 'Pending',
+          };
+        }
+
+        // Construir datos de la orden
         const orderData = {
           userId: payment.userId.toString(),
           paymentId: payment._id?.toString() || '',
@@ -153,56 +189,28 @@ export class MercadoPagoCallbackController {
             name: item.name,
             quantity: item.quantity,
             price: item.price,
-            productId: item.productId, // Ahora pasamos el productId correcto
+            productId: item.productId,
           })),
           totalAmount: payment.amount,
           currency: payment.currency,
-          shippingAddress: payment.metadata?.shippingAddress || {
-            street: 'Pending',
-            city: 'Pending',
-            zip: 'Pending',
-            country: 'Pending',
-          },
-          shippingContact: payment.metadata?.shippingContact,
-          shippingOption: payment.metadata?.shippingOption,
+          customerEmail: customerEmail || undefined, // Email del cliente para enviar confirmación
+          customerName: customerName || undefined, // Nombre del cliente
+          shippingAddress: shippingAddress,
+          simpleShipping: payment.metadata?.simpleShipping || null,
+          shippingData: payment.metadata?.shippingData || null,
+          shippingOption: payment.metadata?.shippingOption || null,
+          shippingCost: payment.metadata?.shippingCost || 0,
         };
 
+        console.log(`📧 [CALLBACK] Creando orden con email: ${customerEmail}, nombre: ${customerName}`);
+        
+        // Crear orden (OrdersService enviará el email automáticamente)
         const order = await this.ordersService.createOrderFromPayment(orderData);
         const orderId = (order as any)._id.toString();
-        this.logger.log(`Order ${orderId} created automatically from payment ${internalPaymentId}`);
+        this.logger.log(`Order ${orderId} created from payment ${internalPaymentId}. Email will be sent by OrdersService.`);
 
-        // Enviar email de confirmación al cliente
-        try {
-          const orderNumber = orderId.slice(-8).toUpperCase();
-          const emailData = {
-            orderNumber,
-            userName: payment.metadata?.shippingContact?.firstName || 'Cliente',
-            userEmail: payment.metadata?.shippingContact?.email || 'no-email',
-            total: payment.amount,
-            products: payment.items,
-            shippingAddress: payment.metadata?.shippingAddress,
-            paymentMethod: 'MercadoPago',
-            orderDate: new Date().toLocaleDateString('es-MX'),
-          };
-
-          // Crear y enviar notificación
-          const notification = await this.notificationsService.createNotification({
-            userId: payment.userId.toString(),
-            title: 'Orden Confirmada',
-            content: `Tu orden #${orderNumber} ha sido confirmada exitosamente`,
-            type: 'order' as any,
-            channel: 'EMAIL' as any,
-            templateData: emailData,
-          });
-
-          if (notification) {
-            await this.notificationsService.sendNotification((notification as any)._id.toString());
-            this.logger.log(`Email notification sent for order ${orderId}`);
-          }
-        } catch (emailError) {
-          this.logger.error('Error sending email:', emailError);
-          // No lanzar error, el pago y orden ya están creados
-        }
+        // NOTA: No enviamos email aquí porque OrdersService.createOrderFromPayment 
+        // ya lo hace automáticamente usando OrderNotificationService (emails reales)
 
       } catch (orderError) {
         this.logger.error('Error creating order from payment:', orderError);

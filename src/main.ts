@@ -7,10 +7,14 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
+  
+  // Middleware para parsear cookies (necesario para autenticación con cookies seguras)
+  app.use(cookieParser());
   
   // Configuración global de validación
   app.useGlobalPipes(new ValidationPipe({ 
@@ -24,12 +28,12 @@ async function bootstrap() {
     prefix: '/uploads/',
   });
 
-  // Configuración de CORS
+  // Configuración de CORS simplificada
   app.enableCors({
-    origin: configService.get('CORS_ORIGIN')?.split(',') || ['http://localhost:3000'],
-    credentials: configService.get('CORS_CREDENTIALS') === 'true',
-    methods: configService.get('CORS_METHODS')?.split(',') || ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: configService.get('CORS_ALLOWED_HEADERS')?.split(',') || ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+    origin: ['http://localhost:3000', 'https://nabra.mx'],
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   });
 
   // Swagger / OpenAPI

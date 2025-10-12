@@ -90,7 +90,17 @@ export class GoogleAuthController {
 
       this.logger.log(`Google OAuth successful for user: ${user.email}`);
 
-      // Redirigir al frontend con el token y datos del usuario
+      // Usar cookies HTTP-Only seguras para el token (mejor práctica de seguridad)
+      // Esto evita que el token quede expuesto en URLs, logs, o historial del navegador
+      res.cookie('access_token', accessToken, {
+        httpOnly: true, // No accesible desde JavaScript (previene XSS)
+        secure: process.env.NODE_ENV === 'production', // Solo HTTPS en producción
+        sameSite: 'lax', // Protección CSRF
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+        path: '/',
+      });
+
+      // Datos básicos del usuario en cookie separada (pueden ser accesibles desde JS)
       const userData = {
         _id: user._id,
         email: user.email,
@@ -99,11 +109,18 @@ export class GoogleAuthController {
         lastName: user.lastName,
         avatarUrl: user.avatarUrl,
         isGoogleUser: true,
-        linkedUserId: user.linkedUserId || user._id,
       };
 
-      // Crear URL con parámetros para el frontend
-      const redirectUrl = `${googleAuthConfig.successRedirect}?token=${accessToken}&user=${encodeURIComponent(JSON.stringify(userData))}&login=success`;
+      res.cookie('user_data', JSON.stringify(userData), {
+        httpOnly: false, // Accesible desde JS para mostrar info del usuario
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+      });
+
+      // Redirigir al frontend con solo un indicador de éxito
+      const redirectUrl = `${googleAuthConfig.successRedirect}?login=success`;
 
       return res.redirect(redirectUrl);
 
@@ -512,18 +529,31 @@ export class GoogleAuthController {
   // ===== LOGOUT =====
 
   @ApiBearerAuth('bearer')
-  @ApiOperation({ summary: 'Logout Google', description: 'Finaliza sesión (a nivel frontend) para usuario Google.' })
+  @ApiOperation({ summary: 'Logout Google', description: 'Finaliza sesión y limpia cookies de autenticación.' })
   @Post('logout')
   @UseGuards(GoogleAuthGuard)
-  async logout(@Req() req: Request): Promise<{ message: string }> {
+  async logout(@Req() req: Request, @Res() res: Response): Promise<void> {
     try {
-      // En un sistema real, aquí podrías invalidar el token JWT
-      // o agregarlo a una lista negra
       this.logger.log(`Google user logged out: ${req.user?.['_id']}`);
 
-      return {
+      // Limpiar cookies de autenticación
+      res.clearCookie('access_token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+      });
+
+      res.clearCookie('user_data', {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+      });
+
+      res.status(HttpStatus.OK).json({
         message: 'Logged out successfully',
-      };
+      });
     } catch (error) {
       this.logger.error(`Error during logout: ${error.message}`, error.stack);
       throw new InternalServerErrorException('Failed to logout');

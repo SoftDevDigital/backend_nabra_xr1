@@ -213,9 +213,9 @@ export class ShipmentProcessorService {
       // ya que el flujo principal no incluye envío automático
       console.log('📋 [SHIPMENT-PROCESSOR] Información de envío procesada (orden no actualizada - flujo simplificado)');
 
-      // Limpiar carrito del usuario
-      await this.cartService.clearCart(pendingShipment.userId);
-      console.log('🛒 [SHIPMENT-PROCESSOR] Carrito limpiado para el usuario');
+      // Nota: El carrito ya fue limpiado en payments.service.ts cuando se confirmó el pago
+      // No es necesario limpiarlo de nuevo aquí
+      console.log('🛒 [SHIPMENT-PROCESSOR] Carrito ya limpiado previamente al confirmar el pago');
 
       // Eliminar envío pendiente (ya no es necesario)
       await this.pendingShipmentModel.deleteOne({ _id: pendingShipment._id });
