@@ -112,6 +112,36 @@ export class Order extends Document {
       contentQuantity: number;
     }>;
     insurance: number;
+    // Información detallada del contacto de envío
+    contact?: {
+      emailOrPhone?: string;
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      email?: string;
+      name?: string;
+    };
+    // Dirección completa de envío
+    address?: {
+      country?: string;
+      state?: string;
+      city?: string;
+      postalCode?: string;
+      addressLine?: string;
+      addressLine2?: string;
+      neighborhood?: string;
+      references?: string;
+    };
+    // Opción de envío seleccionada
+    shippingOption?: {
+      carrier?: string;
+      service?: string;
+      serviceName?: string;
+      currency?: string;
+      price?: number;
+      estimatedDays?: number;
+      description?: string;
+    };
   };
 
   @Prop({ type: Number, default: 0 })

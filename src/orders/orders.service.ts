@@ -187,6 +187,9 @@ export class OrdersService {
         city: string;
         postalCode: string;
         addressLine: string;
+        addressLine2?: string;
+        neighborhood?: string;
+        references?: string;
       };
     } | null;
     shippingOption?: {
@@ -351,11 +354,61 @@ export class OrdersService {
           serviceId: paymentData.shippingData.service_id,
           packages: paymentData.shippingData.packages,
           insurance: paymentData.shippingData.insurance,
-        } : paymentData.shippingOption ? {
-          carrier: paymentData.shippingOption.carrier,
-          service: paymentData.shippingOption.service,
-          serviceId: paymentData.shippingOption.service_id,
-          insurance: paymentData.shippingOption.insurance || 0,
+          // Información de contacto de DrEnvío
+          contact: paymentData.shippingData.destination ? {
+            name: paymentData.shippingData.destination.name,
+            phone: paymentData.shippingData.destination.phone,
+            email: paymentData.shippingData.destination.email,
+          } : undefined,
+          // Dirección completa de DrEnvío
+          address: paymentData.shippingData.destination ? {
+            country: paymentData.shippingData.destination.country,
+            state: paymentData.shippingData.destination.state,
+            city: paymentData.shippingData.destination.city,
+            postalCode: paymentData.shippingData.destination.postal_code,
+            addressLine: paymentData.shippingData.destination.street,
+            neighborhood: paymentData.shippingData.destination.neighborhood,
+            references: paymentData.shippingData.destination.references,
+          } : undefined,
+        } : paymentData.simpleShipping || paymentData.shippingOption ? {
+          // Información combinada de simpleShipping y shippingOption
+          carrier: paymentData.shippingOption?.carrier,
+          service: paymentData.shippingOption?.service,
+          serviceId: paymentData.shippingOption?.service_id,
+          insurance: paymentData.shippingOption?.insurance || 0,
+          packages: [], // No hay paquetes en simpleShipping
+          // Contacto detallado de simpleShipping
+          contact: paymentData.simpleShipping?.contact ? {
+            emailOrPhone: paymentData.simpleShipping.contact.emailOrPhone,
+            firstName: paymentData.simpleShipping.contact.firstName,
+            lastName: paymentData.simpleShipping.contact.lastName,
+            phone: paymentData.simpleShipping.contact.phone,
+            email: paymentData.simpleShipping.contact.emailOrPhone?.includes('@') 
+              ? paymentData.simpleShipping.contact.emailOrPhone 
+              : undefined,
+            name: `${paymentData.simpleShipping.contact.firstName || ''} ${paymentData.simpleShipping.contact.lastName || ''}`.trim(),
+          } : undefined,
+          // Dirección completa de simpleShipping
+          address: paymentData.simpleShipping?.address ? {
+            country: paymentData.simpleShipping.address.country,
+            state: paymentData.simpleShipping.address.state,
+            city: paymentData.simpleShipping.address.city,
+            postalCode: paymentData.simpleShipping.address.postalCode,
+            addressLine: paymentData.simpleShipping.address.addressLine,
+            addressLine2: paymentData.simpleShipping.address.addressLine2,
+            neighborhood: paymentData.simpleShipping.address.neighborhood,
+            references: paymentData.simpleShipping.address.references,
+          } : undefined,
+          // Opción de envío seleccionada
+          shippingOption: paymentData.shippingOption ? {
+            carrier: paymentData.shippingOption.carrier,
+            service: paymentData.shippingOption.service,
+            serviceName: paymentData.shippingOption.service,
+            currency: paymentData.shippingOption.currency,
+            price: paymentData.shippingOption.price,
+            estimatedDays: paymentData.shippingOption.days ? parseInt(paymentData.shippingOption.days) : undefined,
+            description: `${paymentData.shippingOption.carrier} - ${paymentData.shippingOption.service}`,
+          } : undefined,
         } : undefined, // Información completa de envío
         createdAt: new Date(),
       });
