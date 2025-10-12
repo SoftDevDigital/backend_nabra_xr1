@@ -53,31 +53,32 @@ export class GoogleAuthController {
   async googleAuthCallback(@Req() req: Request, @Res() res: Response) {
     try {
       // 🔍 LOG 1: Inicio del callback
-      this.logger.log('========== GOOGLE OAUTH CALLBACK INICIADO ==========');
-      this.logger.log(`📍 Variables de entorno cargadas:`);
-      this.logger.log(`   GOOGLE_SUCCESS_REDIRECT: ${process.env.GOOGLE_SUCCESS_REDIRECT || 'NO DEFINIDA'}`);
-      this.logger.log(`   GOOGLE_FAILURE_REDIRECT: ${process.env.GOOGLE_FAILURE_REDIRECT || 'NO DEFINIDA'}`);
-      this.logger.log(`   GOOGLE_CALLBACK_URL: ${process.env.GOOGLE_CALLBACK_URL || 'NO DEFINIDA'}`);
+      console.log('\n🎯 ========== GOOGLE OAUTH CALLBACK INICIADO ==========');
+      console.log(`📍 Variables de entorno cargadas:`);
+      console.log(`   GOOGLE_SUCCESS_REDIRECT: ${process.env.GOOGLE_SUCCESS_REDIRECT || '❌ NO DEFINIDA'}`);
+      console.log(`   GOOGLE_FAILURE_REDIRECT: ${process.env.GOOGLE_FAILURE_REDIRECT || '❌ NO DEFINIDA'}`);
+      console.log(`   GOOGLE_CALLBACK_URL: ${process.env.GOOGLE_CALLBACK_URL || '❌ NO DEFINIDA'}`);
       
       // 🔍 LOG 2: Valores del config
-      this.logger.log(`📍 Valores de googleAuthConfig:`);
-      this.logger.log(`   callbackUrl: ${googleAuthConfig.callbackUrl}`);
-      this.logger.log(`   successRedirect: ${googleAuthConfig.successRedirect}`);
-      this.logger.log(`   failureRedirect: ${googleAuthConfig.failureRedirect}`);
+      console.log(`\n📍 Valores de googleAuthConfig:`);
+      console.log(`   callbackUrl: ${googleAuthConfig.callbackUrl}`);
+      console.log(`   successRedirect: ${googleAuthConfig.successRedirect}`);
+      console.log(`   failureRedirect: ${googleAuthConfig.failureRedirect}`);
 
       const user = req.user as any;
 
       if (!user) {
-        this.logger.error('❌ No user data received from Google OAuth');
+        console.error('❌ No user data received from Google OAuth');
         const failUrl = `${googleAuthConfig.failureRedirect}?error=no_user_data`;
-        this.logger.error(`🔴 Redirigiendo a (FALLO): ${failUrl}`);
+        console.error(`🔴 Redirigiendo a (FALLO): ${failUrl}`);
         return res.redirect(failUrl);
       }
       
       // 🔍 LOG 3: Usuario recibido
-      this.logger.log(`✅ Usuario recibido: ${user.email}`);
-      this.logger.log(`   ID: ${user._id}`);
-      this.logger.log(`   Google ID: ${user.googleId}`);
+      console.log(`\n✅ Usuario recibido desde Strategy:`);
+      console.log(`   Email: ${user.email}`);
+      console.log(`   ID: ${user._id}`);
+      console.log(`   Google ID: ${user.googleId}`);
 
       // Generar JWT token
       // Validación de secreto JWT para evitar errores y bucles de redirección
@@ -143,18 +144,19 @@ export class GoogleAuthController {
       const redirectUrl = `${googleAuthConfig.successRedirect}?login=success`;
 
       // 🔍 LOG FINAL: URL de redirección
-      this.logger.log(`========== REDIRECCIÓN FINAL ==========`);
-      this.logger.log(`🎯 successRedirect desde config: ${googleAuthConfig.successRedirect}`);
-      this.logger.log(`🎯 URL completa de redirección: ${redirectUrl}`);
-      this.logger.log(`🚀 Ejecutando res.redirect() ahora...`);
-      this.logger.log('========== FIN GOOGLE OAUTH CALLBACK ==========');
+      console.log(`\n========== REDIRECCIÓN FINAL ==========`);
+      console.log(`🎯 successRedirect desde config: ${googleAuthConfig.successRedirect}`);
+      console.log(`🎯 URL completa de redirección: ${redirectUrl}`);
+      console.log(`🚀 Ejecutando res.redirect() ahora...`);
+      console.log('========== FIN GOOGLE OAUTH CALLBACK ==========\n');
 
       return res.redirect(redirectUrl);
 
     } catch (error) {
-      this.logger.error(`❌❌❌ Google OAuth callback error: ${error.message}`, error.stack);
+      console.error(`\n❌❌❌ Google OAuth callback error: ${error.message}`);
+      console.error(error.stack);
       const errorUrl = `${googleAuthConfig.failureRedirect}?error=server_error`;
-      this.logger.error(`🔴 Redirigiendo a (ERROR): ${errorUrl}`);
+      console.error(`🔴 Redirigiendo a (ERROR): ${errorUrl}\n`);
       return res.redirect(errorUrl);
     }
   }

@@ -13,20 +13,38 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     private configService: ConfigService,
     private googleUserService: GoogleUserService,
   ) {
+    console.log('\n🚀 ========== INICIALIZANDO GOOGLE STRATEGY ==========');
+    
     const clientID = configService.get<string>('GOOGLE_CLIENT_ID');
     const clientSecret = configService.get<string>('GOOGLE_CLIENT_SECRET');
     
+    console.log('📍 Variables de entorno al inicializar:');
+    console.log(`   GOOGLE_CLIENT_ID: ${clientID ? '✅ Configurado' : '❌ NO ENCONTRADO'}`);
+    console.log(`   GOOGLE_CLIENT_SECRET: ${clientSecret ? '✅ Configurado' : '❌ NO ENCONTRADO'}`);
+    console.log(`   GOOGLE_CALLBACK_URL (env): ${configService.get<string>('GOOGLE_CALLBACK_URL') || '❌ NO DEFINIDA'}`);
+    console.log(`   GOOGLE_SUCCESS_REDIRECT (env): ${configService.get<string>('GOOGLE_SUCCESS_REDIRECT') || '❌ NO DEFINIDA'}`);
+    console.log(`   GOOGLE_FAILURE_REDIRECT (env): ${configService.get<string>('GOOGLE_FAILURE_REDIRECT') || '❌ NO DEFINIDA'}`);
+    
+    console.log('\n📍 Valores de googleAuthConfig:');
+    console.log(`   callbackUrl: ${googleAuthConfig.callbackUrl}`);
+    console.log(`   successRedirect: ${googleAuthConfig.successRedirect}`);
+    console.log(`   failureRedirect: ${googleAuthConfig.failureRedirect}`);
+    
     if (!clientID || !clientSecret) {
-      console.error('❌ Google OAuth credentials missing!');
+      console.error('\n❌ Google OAuth credentials missing!');
       console.error('   GOOGLE_CLIENT_ID:', clientID || 'NOT FOUND');
       console.error('   GOOGLE_CLIENT_SECRET:', clientSecret || 'NOT FOUND');
       throw new Error('Google OAuth credentials are required. Please check your .env file.');
     }
     
+    const finalCallbackURL = configService.get<string>('GOOGLE_CALLBACK_URL') || googleAuthConfig.callbackUrl;
+    console.log(`\n🔧 CallbackURL final que se usará: ${finalCallbackURL}`);
+    console.log('========================================================\n');
+    
     super({
       clientID: clientID,
       clientSecret: clientSecret,
-      callbackURL: configService.get<string>('GOOGLE_CALLBACK_URL') || googleAuthConfig.callbackUrl,
+      callbackURL: finalCallbackURL,
       scope: googleAuthConfig.scope,
     });
   }
@@ -38,6 +56,9 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     done: VerifyCallback,
   ): Promise<any> {
     try {
+      console.log('\n🔐 ========== GOOGLE OAUTH VALIDATE INICIADO ==========');
+      console.log(`📧 Usuario de Google: ${profile.emails?.[0]?.value || 'Sin email'}`);
+      console.log(`🆔 Google ID: ${profile.id}`);
       this.logger.log(`Google OAuth validation for user: ${profile.id}`);
 
       // Validar que el email esté verificado por Google
@@ -144,6 +165,9 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         googleId: googleUser.googleId,
         linkedUserId: user._id,
       };
+
+      console.log('✅ Usuario validado correctamente, pasando al callback...');
+      console.log('========== FIN GOOGLE OAUTH VALIDATE ==========\n');
 
       return done(null, userPayload);
 
