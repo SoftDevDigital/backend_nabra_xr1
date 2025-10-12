@@ -28,8 +28,9 @@ export class AuthController {
     // Establecer cookie HTTP-only segura (mejor práctica de seguridad)
     res.cookie('access_token', result.access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
+      domain: '.nabra.mx',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
       path: '/',
     });
@@ -37,8 +38,9 @@ export class AuthController {
     // Cookie con datos del usuario (accesible desde JS)
     res.cookie('user_data', JSON.stringify(result.user), {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
+      domain: '.nabra.mx',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
@@ -61,8 +63,9 @@ export class AuthController {
     // Establecer cookie HTTP-only segura (mejor práctica de seguridad)
     res.cookie('access_token', result.access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
+      domain: '.nabra.mx',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
       path: '/',
     });
@@ -70,8 +73,9 @@ export class AuthController {
     // Cookie con datos del usuario (accesible desde JS)
     res.cookie('user_data', JSON.stringify(result.user), {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
+      domain: '.nabra.mx',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
@@ -91,15 +95,17 @@ export class AuthController {
     // Limpiar cookies de autenticación
     res.clearCookie('access_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
+      domain: '.nabra.mx',
       path: '/',
     });
 
     res.clearCookie('user_data', {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
+      domain: '.nabra.mx',
       path: '/',
     });
 
