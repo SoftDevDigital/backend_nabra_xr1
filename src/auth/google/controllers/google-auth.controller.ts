@@ -94,9 +94,8 @@ export class GoogleAuthController {
       // Esto evita que el token quede expuesto en URLs, logs, o historial del navegador
       res.cookie('access_token', accessToken, {
         httpOnly: true, // No accesible desde JavaScript (previene XSS)
-        secure: true, // Solo HTTPS
+        secure: process.env.NODE_ENV === 'production', // Solo HTTPS en producción
         sameSite: 'lax', // Protección CSRF
-        domain: '.nabra.mx', // Compartir entre api.nabra.mx y nabra.mx
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
         path: '/',
       });
@@ -114,9 +113,8 @@ export class GoogleAuthController {
 
       res.cookie('user_data', JSON.stringify(userData), {
         httpOnly: false, // Accesible desde JS para mostrar info del usuario
-        secure: true,
+        secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        domain: '.nabra.mx', // Compartir entre api.nabra.mx y nabra.mx
         maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/',
       });
@@ -541,17 +539,15 @@ export class GoogleAuthController {
       // Limpiar cookies de autenticación
       res.clearCookie('access_token', {
         httpOnly: true,
-        secure: true,
+        secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        domain: '.nabra.mx',
         path: '/',
       });
 
       res.clearCookie('user_data', {
         httpOnly: false,
-        secure: true,
+        secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        domain: '.nabra.mx',
         path: '/',
       });
 
