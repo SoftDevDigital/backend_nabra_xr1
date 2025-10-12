@@ -6,8 +6,8 @@ export const googleAuthConfig = {
   clientId: process.env.GOOGLE_CLIENT_ID || '',
   clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   
-  // URLs de callback
-  callbackUrl: `https://api.nabra.mx/auth/google/callback`,
+  // URLs de callback - DEBE coincidir con Google Cloud Console
+  callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'https://api.nabra.mx/auth/google/callback',
   
   // Scope de permisos solicitados
   scope: ['profile', 'email'],
@@ -19,9 +19,9 @@ export const googleAuthConfig = {
   jwtSecret: process.env.JWT_SECRET || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   
-  // Configuración de redirección después del login
-  successRedirect: 'https://nabra.mx/',
-  failureRedirect: 'https://nabra.mx/login?error=auth_failed',
+  // Configuración de redirección después del login (hacia el FRONTEND)
+  successRedirect: process.env.GOOGLE_SUCCESS_REDIRECT || 'https://nabra.mx/',
+  failureRedirect: process.env.GOOGLE_FAILURE_REDIRECT || 'https://nabra.mx/login?error=auth_failed',
   
   // Configuración de seguridad
   security: {
