@@ -19,10 +19,15 @@ export class MercadoPagoService {
   private payment: Payment;
 
   constructor(private configService: ConfigService) {
-    const accessToken = 'APP_USR-8827303134968479-092216-3a8af61b395b19df5000bf09ee894bf6-2369426390'
+    const accessToken = this.configService.get<string>('MERCADOPAGO_ACCESS_TOKEN');
     const integratorId = this.configService.get<string>('MERCADOPAGO_INTEGRATOR_ID');
+    
+    if (!accessToken) {
+      throw new Error('MERCADOPAGO_ACCESS_TOKEN is required. Please check your .env file.');
+    }
+    
     this.mpClient = new MercadoPagoConfig({ 
-      accessToken: accessToken || '',
+      accessToken: accessToken,
       options: integratorId ? { integratorId } : undefined,
     } as any);
     this.preference = new Preference(this.mpClient);
