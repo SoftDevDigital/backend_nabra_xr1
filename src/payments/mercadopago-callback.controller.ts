@@ -12,6 +12,9 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+
+
+import { ApiTags, ApiOperation, ApiBody, ApiQuery, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { PaymentsService } from './payments.service';
 import { OrdersService } from '../orders/orders.service';
@@ -21,6 +24,7 @@ import { MercadoPagoCheckoutDto } from './dtos/mercadopago-checkout.dto';
 import { PaymentStatus } from './schemas/payment.schema';
 import { CartService } from '../cart/cart.service';
 
+@ApiTags('Payments - MercadoPago')
 @Controller('payments/mercadopago')
 export class MercadoPagoCallbackController {
   private readonly logger = new Logger(MercadoPagoCallbackController.name);
@@ -35,6 +39,29 @@ export class MercadoPagoCallbackController {
   /**
    * Endpoint para crear un checkout de MercadoPago desde el carrito
    */
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ 
+    summary: 'Crear checkout de MercadoPago', 
+    description: 'Crea una preferencia de pago de MercadoPago desde el carrito del usuario con información de envío.' 
+  })
+  @ApiBody({ type: MercadoPagoCheckoutDto })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Checkout creado exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: { 
+          type: 'object',
+          properties: {
+            init_point: { type: 'string', description: 'URL de checkout de MercadoPago' },
+            id: { type: 'string', description: 'ID de la preferencia' }
+          }
+        }
+      }
+    }
+  })
   @Post('checkout')
   @HttpCode(HttpStatus.CREATED)
   async createCheckout(
@@ -97,6 +124,16 @@ export class MercadoPagoCallbackController {
    * MercadoPago redirige aquí después de que el usuario aprueba el pago
    */
   @Public()
+  @ApiOperation({ 
+    summary: 'Callback de éxito', 
+    description: 'Callback automático de MercadoPago cuando el pago es aprobado. Crea la orden y limpia el carrito. NO es llamado por el frontend.' 
+  })
+  @ApiQuery({ name: 'payment_id', required: false, description: 'ID del pago en MercadoPago' })
+  @ApiQuery({ name: 'status', required: false, description: 'Estado del pago' })
+  @ApiQuery({ name: 'external_reference', required: false, description: 'Referencia externa' })
+  @ApiQuery({ name: 'merchant_order_id', required: false, description: 'ID de orden de comercio' })
+  @ApiQuery({ name: 'preference_id', required: false, description: 'ID de preferencia' })
+  @ApiResponse({ status: 302, description: 'Redirección al frontend con resultado del pago' })
   @Get('success')
   async handleSuccess(
     @Query('payment_id') paymentId: string,
@@ -233,6 +270,14 @@ export class MercadoPagoCallbackController {
    * Callback de fallo de MercadoPago
    */
   @Public()
+  @ApiOperation({ 
+    summary: 'Callback de fallo', 
+    description: 'Callback de MercadoPago cuando el pago falla o es rechazado. NO es llamado por el frontend.' 
+  })
+  @ApiQuery({ name: 'payment_id', required: false, description: 'ID del pago en MercadoPago' })
+  @ApiQuery({ name: 'status', required: false, description: 'Estado del pago' })
+  @ApiQuery({ name: 'external_reference', required: false, description: 'Referencia externa' })
+  @ApiResponse({ status: 302, description: 'Redirección al frontend con mensaje de error' })
   @Get('failure')
   async handleFailure(
     @Query('payment_id') paymentId: string,
@@ -258,6 +303,14 @@ export class MercadoPagoCallbackController {
    * Callback de pago pendiente de MercadoPago
    */
   @Public()
+  @ApiOperation({ 
+    summary: 'Callback de pago pendiente', 
+    description: 'Callback de MercadoPago cuando el pago queda en estado pendiente. NO es llamado por el frontend.' 
+  })
+  @ApiQuery({ name: 'payment_id', required: false, description: 'ID del pago en MercadoPago' })
+  @ApiQuery({ name: 'status', required: false, description: 'Estado del pago' })
+  @ApiQuery({ name: 'external_reference', required: false, description: 'Referencia externa' })
+  @ApiResponse({ status: 302, description: 'Redirección al frontend indicando estado pendiente' })
   @Get('pending')
   async handlePending(
     @Query('payment_id') paymentId: string,

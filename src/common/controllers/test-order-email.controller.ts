@@ -1,7 +1,9 @@
 import { Controller, Post, Body, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { OrderNotificationService } from '../../orders/services/order-notification.service';
 import { Public } from '../decorators/public.decorator';
 
+@ApiTags('Testing')
 @Controller('test')
 export class TestOrderEmailController {
   private readonly logger = new Logger(TestOrderEmailController.name);
@@ -9,6 +11,21 @@ export class TestOrderEmailController {
   constructor(private readonly orderNotificationService: OrderNotificationService) {}
 
   @Public()
+  @ApiOperation({ 
+    summary: 'Enviar email de prueba', 
+    description: 'Envía un email de confirmación de orden de prueba (solo para desarrollo/testing).' 
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', example: 'test@example.com', description: 'Email destinatario' },
+        orderNumber: { type: 'string', example: 'ORD-2025-000001', description: 'Número de orden de prueba' },
+        customerName: { type: 'string', example: 'Juan Pérez', description: 'Nombre del cliente' }
+      }
+    }
+  })
+  @ApiResponse({ status: 200, description: 'Email enviado exitosamente' })
   @Post('order-email')
   async sendTestOrderEmail(@Body() body: { 
     to?: string; 
