@@ -19,7 +19,7 @@ export class MercadoPagoService {
   private payment: Payment;
 
   constructor(private configService: ConfigService) {
-    const accessToken = this.configService.get<string>('MERCADOPAGO_ACCESS_TOKEN');
+    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-6134474951811496-100802-7c9987de1190ad933c24d9497c4dfbf2-741575872'
     const integratorId = this.configService.get<string>('MERCADOPAGO_INTEGRATOR_ID');
     
     if (!accessToken) {
