@@ -6,8 +6,8 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Connection, ClientSession } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { Payment, PaymentDocument, PaymentStatus, PaymentProvider } from './schemas/payment.schema';
 import { CreatePaymentDto } from './dtos/create-payment.dto';
 import { PaymentResponseDto } from './dtos/payment-response.dto';
@@ -30,7 +30,6 @@ export class PaymentsService {
 
   constructor(
     @InjectModel(Payment.name) private paymentModel: Model<PaymentDocument>,
-    @InjectConnection() private connection: Connection,
     private mpService: MercadoPagoService,
     @Inject(forwardRef(() => CartService)) private cartService: CartService,
     private productsService: ProductsService,
@@ -543,8 +542,8 @@ export class PaymentsService {
             // Continuar con la redirección pero sin crear orden duplicada
             createdOrderId = (existingOrder as any)._id?.toString() || null;
           } else {
-            // ✅ TRANSACCIÓN: Actualizar pago + crear orden + limpiar carrito
-            // Preparar datos antes de iniciar la transacción
+            // Actualizar pago + crear orden + limpiar carrito
+            // Preparar datos antes de procesar
             let userInfo: any = null;
             try {
               userInfo = await this.getUserInfo(payment.userId.toString());
@@ -552,16 +551,13 @@ export class PaymentsService {
               console.log(`⚠️ [PAYMENT-RETURN] No se pudo obtener email del usuario ${payment.userId}`);
             }
 
-            const session = await this.connection.startSession();
-            session.startTransaction();
-
             try {
-              this.logger.log(`🔒 [TRANSACTION-RETURN] Starting payment update + order creation + cart cleanup for user ${payment.userId}`);
+              this.logger.log(`Starting payment update + order creation + cart cleanup for user ${payment.userId}`);
 
-              // Actualizar estado del pago dentro de la transacción
+              // Actualizar estado del pago
               payment.status = PaymentStatus.COMPLETED;
               payment.captureId = String(params.paymentId);
-              await payment.save({ session });
+              await payment.save();
 
               console.log(`📧 [PAYMENT-RETURN] Creando orden para usuario: ${payment.userId}`);
               const order = await this.ordersService.createOrderFromPayment({
@@ -580,7 +576,7 @@ export class PaymentsService {
                 simpleShipping: payment.metadata?.simpleShipping || null,
                 shippingOption: payment.metadata?.shippingOption || null,
                 shippingCost: payment.metadata?.shippingCost || 0,
-              }, session); // ✅ Pasar session
+              });
 
               console.log(`✅ [PAYMENT-RETURN] Orden ${order._id} creada exitosamente`);
               createdOrderId = (order as any)._id?.toString() || null;
@@ -591,23 +587,15 @@ export class PaymentsService {
                 await this.handlePartialCartUpdate(payment);
               } else {
                 console.log(`🛒 [PAYMENT-RETURN] Limpiando carrito para usuario: ${payment.userId}`);
-                await this.cartService.clearCart(payment.userId.toString(), session); // ✅ Pasar session
+                await this.cartService.clearCart(payment.userId.toString());
                 this.logger.log(`Cart cleared for user ${payment.userId} after successful MP return`);
               }
 
-              // Si todo salió bien, commitear la transacción
-              await session.commitTransaction();
-              this.logger.log(`✅ [TRANSACTION-RETURN] Payment + order + cart cleanup completed successfully`);
+              this.logger.log(`✅ Payment + order + cart cleanup completed successfully`);
 
             } catch (error) {
-              // Si algo falla, hacer rollback automático
-              await session.abortTransaction();
-              this.logger.error(`❌ [TRANSACTION-RETURN] Failed, rolling back:`, error);
-              console.error('❌ [PAYMENT-RETURN] Error creando orden (rollback aplicado):', error);
-              
-            } finally {
-              // Siempre cerrar la sesión
-              session.endSession();
+              this.logger.error(`❌ Failed processing payment return:`, error);
+              console.error('❌ [PAYMENT-RETURN] Error creando orden:', error);
             }
           }
         } else if (payment && payment.status === PaymentStatus.COMPLETED) {
@@ -833,12 +821,9 @@ export class PaymentsService {
           }
         }
 
-        // Iniciar transacción para crear orden + limpiar carrito
-        const session = await this.connection.startSession();
-        session.startTransaction();
-
+        // Crear orden + limpiar carrito
         try {
-          this.logger.log(`🔒 [TRANSACTION] Starting order creation + cart cleanup for user ${payment.userId}`);
+          this.logger.log(`Starting order creation + cart cleanup for user ${payment.userId}`);
           console.log(`📧 [WEBHOOK] Creando orden con email: ${customerEmail}, nombre: ${customerName}`);
 
           const order = await this.ordersService.createOrderFromPayment({
@@ -853,7 +838,7 @@ export class PaymentsService {
             simpleShipping: finalSimpleShipping || null,
             shippingOption: finalShippingOption || null,
             shippingCost: finalShippingCost,
-          }, session); // ✅ Pasar session
+          });
 
           // Manejar carrito según tipo de pago
           if (payment.metadata?.isPartial) {
@@ -861,15 +846,13 @@ export class PaymentsService {
             await this.handlePartialCartUpdate(payment);
           } else {
             console.log(`🛒 [WEBHOOK] Procesando pago completo, limpiando carrito para usuario: ${payment.userId}`);
-            await this.cartService.clearCart(payment.userId.toString(), session); // ✅ Pasar session
+            await this.cartService.clearCart(payment.userId.toString());
             console.log(`✅ [WEBHOOK] Carrito limpiado exitosamente para usuario: ${payment.userId}`);
           }
 
-          // Si todo salió bien, commitear la transacción
-          await session.commitTransaction();
-          this.logger.log(`✅ [TRANSACTION] Order creation + cart cleanup completed successfully`);
+          this.logger.log(`✅ Order creation + cart cleanup completed successfully`);
 
-          // Enviar email de confirmación DESPUÉS de la transacción exitosa
+          // Enviar email de confirmación
           if (customerEmail && customerName) {
             console.log(`📧 [WEBHOOK] Enviando email de confirmación a: ${customerEmail}`);
             try {
@@ -886,10 +869,8 @@ export class PaymentsService {
           }
 
         } catch (error) {
-          // Si algo falla, hacer rollback automático
-          await session.abortTransaction();
-          this.logger.error(`❌ [TRANSACTION] Order creation + cart cleanup failed, rolling back:`, error);
-          console.error('❌ [MERCADOPAGO-WEBHOOK] Error creando orden (rollback aplicado):', error);
+          this.logger.error(`❌ Order creation + cart cleanup failed:`, error);
+          console.error('❌ [MERCADOPAGO-WEBHOOK] Error creando orden:', error);
           
           // IMPORTANTE: Revertir el estado del pago a PENDING para permitir reintento
           await this.paymentModel.updateOne(
@@ -902,10 +883,6 @@ export class PaymentsService {
             }
           );
           console.log(`⚠️ [WEBHOOK] Pago revertido a PENDING para permitir reintento`);
-
-        } finally {
-          // Siempre cerrar la sesión
-          session.endSession();
         }
       } else if (status === 'rejected' || status === 'cancelled' || status === 'cancelled_by_user') {
         payment.status = PaymentStatus.CANCELLED;

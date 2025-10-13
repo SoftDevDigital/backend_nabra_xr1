@@ -7,8 +7,8 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Connection, ClientSession } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { Product } from './schemas/product.schema';
 import { CreateProductDto } from './dtos/create-product.dto';
 import { UpdateProductDto } from './dtos/update-product.dto';
@@ -20,7 +20,6 @@ export class ProductsService {
 
   constructor(
     @InjectModel(Product.name) private productModel: Model<Product>,
-    @InjectConnection() private connection: Connection,
     @Inject(forwardRef(() => SimplePromotionsService)) 
     private promotionsService: SimplePromotionsService,
   ) {}
@@ -205,8 +204,8 @@ export class ProductsService {
     };
   }
 
-  async reserveStock(productId: string, quantity: number, session?: ClientSession): Promise<void> {
-    const product = await this.productModel.findById(productId).session(session || null);
+  async reserveStock(productId: string, quantity: number): Promise<void> {
+    const product = await this.productModel.findById(productId);
     if (!product) {
       throw new NotFoundException(`Product with ID ${productId} not found`);
     }
@@ -217,19 +216,19 @@ export class ProductsService {
 
     if (!product.isPreorder) {
       product.stock -= quantity;
-      await product.save({ session });
+      await product.save();
     }
   }
 
-  async releaseStock(productId: string, quantity: number, session?: ClientSession): Promise<void> {
-    const product = await this.productModel.findById(productId).session(session || null);
+  async releaseStock(productId: string, quantity: number): Promise<void> {
+    const product = await this.productModel.findById(productId);
     if (!product) {
       throw new NotFoundException(`Product with ID ${productId} not found`);
     }
 
     if (!product.isPreorder) {
       product.stock += quantity;
-      await product.save({ session });
+      await product.save();
     }
   }
 
@@ -256,36 +255,25 @@ export class ProductsService {
       return { success: false, errors };
     }
 
-    // ✅ TRANSACCIÓN: Reservamos todo el stock de forma atómica
-    const session = await this.connection.startSession();
-    session.startTransaction();
-
+    // Reservamos el stock sin transacciones
     try {
-      this.logger.log(`🔒 [TRANSACTION] Starting bulk stock reservation for ${reservations.length} items`);
+      this.logger.log(`🔒 Starting bulk stock reservation for ${reservations.length} items`);
       
       for (const reservation of reservations) {
-        await this.reserveStock(reservation.productId, reservation.quantity, session);
+        await this.reserveStock(reservation.productId, reservation.quantity);
       }
 
-      // Si todo salió bien, commitear la transacción
-      await session.commitTransaction();
-      this.logger.log(`✅ [TRANSACTION] Bulk stock reservation completed successfully`);
+      this.logger.log(`✅ Bulk stock reservation completed successfully`);
       
       return { success: true, errors: [] };
 
     } catch (error) {
-      // Si algo falla, hacer rollback automático
-      await session.abortTransaction();
-      this.logger.error(`❌ [TRANSACTION] Bulk stock reservation failed, rolling back:`, error);
+      this.logger.error(`❌ Bulk stock reservation failed:`, error);
       
       return { 
         success: false, 
-        errors: [`Stock reservation failed: ${error.message}. All changes have been rolled back.`] 
+        errors: [`Stock reservation failed: ${error.message}`] 
       };
-
-    } finally {
-      // Siempre cerrar la sesión
-      session.endSession();
     }
   }
 

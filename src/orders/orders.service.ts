@@ -6,8 +6,8 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Types, Connection, ClientSession } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import { Order } from './schemas/order.schema';
 import { CheckoutPartialDto } from './dtos/checkout-partial';
 import { UpdateStatusDto } from './dtos/update-status';
@@ -27,7 +27,6 @@ export class OrdersService {
 
   constructor(
     @InjectModel(Order.name) private orderModel: Model<Order>,
-    @InjectConnection() private connection: Connection,
     private cartService: CartService,
     private productsService: ProductsService,
     private addressService: AddressService,
@@ -204,7 +203,7 @@ export class OrdersService {
       days?: string;
     } | null;
     shippingCost?: number;
-  }, session?: ClientSession) {
+  }) {
     try {
       // Generar número de orden único
       const orderNumber = await this.orderNumberService.generateOrderNumber();
@@ -413,7 +412,7 @@ export class OrdersService {
         createdAt: new Date(),
       });
 
-      await order.save({ session });
+      await order.save();
       this.logger.log(`Order created from payment: ${order._id} (${orderNumber}) for user ${paymentData.userId}`);
       
       // Enviar email de confirmación si tenemos email del cliente

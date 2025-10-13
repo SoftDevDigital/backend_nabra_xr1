@@ -5,8 +5,8 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Connection, ClientSession } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { Cart } from './schemas/cart.schema';
 import { AddToCartDto } from './dtos/add-to-cart.dto';
 import { UpdateCartDto } from './dtos/update-cart.dto';
@@ -18,7 +18,6 @@ import { DiscountCalculatorService } from '../promotions/discount-calculator.ser
 export class CartService {
   constructor(
     @InjectModel(Cart.name) private cartModel: Model<Cart>,
-    @InjectConnection() private connection: Connection,
     @Inject(forwardRef(() => ProductsService)) private productsService: ProductsService,
     @Inject(forwardRef(() => DiscountCalculatorService)) private discountCalculatorService: DiscountCalculatorService,
   ) {}
@@ -209,7 +208,7 @@ export class CartService {
     return await this.getCartSummaryWithDiscounts(userId);
   }
 
-  async clearCart(userId: string, session?: ClientSession) {
+  async clearCart(userId: string) {
     console.log('🧹 [CART-SERVICE] Limpiando carrito completamente para usuario:', userId);
     
     // Limpiar TODA la información del carrito
@@ -220,7 +219,7 @@ export class CartService {
           items: []
         } 
       }
-    ).session(session || null).exec();
+    ).exec();
     
     console.log('✅ [CART-SERVICE] Carrito limpiado completamente');
     return { success: true } as const;
