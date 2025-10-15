@@ -25,10 +25,57 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiTags } 
 export class MediaController {
   constructor(private mediaService: MediaService) {}
 
+  @ApiOperation({ summary: 'Subir imagen desde archivo', description: 'Recibe una imagen como archivo y la convierte a URL guardándola en la base de datos.' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ 
+    schema: { 
+      type: 'object', 
+      properties: { 
+        file: { type: 'string', format: 'binary', description: 'Archivo de imagen (PNG/JPG)' },
+        type: { type: 'string', enum: ['product', 'cover'], description: 'Tipo de imagen' }
+      },
+      required: ['file', 'type']
+    } 
+  })
+  @Roles('admin')
+  @Post('upload/file')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (req, file, cb) => {
+          const randomName = Array(32)
+            .fill(null)
+            .map(() => Math.round(Math.random() * 16).toString(16))
+            .join('');
+          return cb(null, `${randomName}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new Error('Solo se permiten archivos JPEG y PNG'), false);
+        }
+      },
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB
+      },
+    }),
+  )
+  async uploadFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('type') type: string,
+    @Request() req,
+  ): Promise<Media> {
+    const uploadDto: UploadDto = { type, url: '' }; // url no se usa en uploadFile
+    return this.mediaService.uploadFile(file, uploadDto, req.user);
+  }
+
   @ApiOperation({ summary: 'Registrar imagen por URL', description: 'Recibe una URL de imagen y la registra en media.' })
   @ApiBody({ schema: { type: 'object', properties: { url: { type: 'string', example: 'https://cdn.example.com/image.jpg' }, type: { type: 'string', enum: ['product', 'cover'] } } } })
   @Roles('admin')
-  @Post('upload')
+  @Post('upload/url')
   async uploadByUrl(
     @Body() uploadDto: UploadDto,
     @Request() req,

@@ -46,6 +46,11 @@ export class MediaService {
       throw new ForbiddenException('Only admins can upload files');
     }
     const { url, type } = uploadDto;
+    
+    if (!url) {
+      throw new ForbiddenException('URL is required for URL upload');
+    }
+    
     // Infer filename and mimetype from URL
     const fileName = url.split('/').pop() || 'image';
     const lower = fileName.toLowerCase();
