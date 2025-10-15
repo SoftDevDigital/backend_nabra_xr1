@@ -8,6 +8,7 @@ import {
   UseInterceptors,
   UploadedFile,
   Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -52,10 +53,16 @@ export class MediaController {
         },
       }),
       fileFilter: (req, file, cb) => {
+        console.log('File received:', {
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size
+        });
+        
         if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
           cb(null, true);
         } else {
-          cb(new Error('Solo se permiten archivos JPEG y PNG'), false);
+          cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}. Solo se permiten JPEG y PNG.`), false);
         }
       },
       limits: {
@@ -68,6 +75,18 @@ export class MediaController {
     @Body('type') type: string,
     @Request() req,
   ): Promise<Media> {
+    if (!file) {
+      throw new BadRequestException('No se recibió ningún archivo');
+    }
+    
+    console.log('Uploading file:', {
+      filename: file.filename,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      type: type
+    });
+    
     const uploadDto: UploadDto = { type, url: '' }; // url no se usa en uploadFile
     return this.mediaService.uploadFile(file, uploadDto, req.user);
   }
