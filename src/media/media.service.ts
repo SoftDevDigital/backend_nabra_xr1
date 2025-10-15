@@ -41,31 +41,6 @@ export class MediaService {
     return media.save();
   }
 
-  async uploadByUrl(uploadDto: UploadDto, user: any): Promise<Media> {
-    if (user.role !== 'admin') {
-      throw new ForbiddenException('Only admins can upload files');
-    }
-    const { url, type } = uploadDto;
-    
-    if (!url) {
-      throw new ForbiddenException('URL is required for URL upload');
-    }
-    
-    // Infer filename and mimetype from URL
-    const fileName = url.split('/').pop() || 'image';
-    const lower = fileName.toLowerCase();
-    let mimeType = 'image/jpeg';
-    if (lower.endsWith('.png')) mimeType = 'image/png';
-    else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mimeType = 'image/jpeg';
-
-    const media = new this.mediaModel({
-      url,
-      fileName,
-      type,
-      mimeType,
-    });
-    return media.save();
-  }
 
   async getFile(id: string): Promise<Media> {
     const media = await this.mediaModel.findById(id);
@@ -75,16 +50,6 @@ export class MediaService {
     return media;
   }
 
-  async getFileUrl(id: string): Promise<{ url: string; fileName: string }> {
-    const media = await this.mediaModel.findById(id);
-    if (!media) {
-      throw new NotFoundException('File not found');
-    }
-    return {
-      url: media.url,
-      fileName: media.fileName,
-    };
-  }
 
   async deleteFile(id: string, user: any): Promise<void> {
     if (user.role !== 'admin') {
@@ -114,20 +79,6 @@ export class MediaService {
     return media.save();
   }
 
-  async deactivateCoverImage(id: string, user: any): Promise<Media> {
-    if (user.role !== 'admin') {
-      throw new ForbiddenException('Only admins can deactivate cover image');
-    }
-    const media = await this.mediaModel.findById(id);
-    if (!media || media.type !== 'cover') {
-      throw new NotFoundException('Invalid cover image');
-    }
-    if (!media.active) {
-      throw new ForbiddenException('Cover image is already deactivated');
-    }
-    media.active = false;
-    return media.save();
-  }
 
   async getActiveCoverUrl(): Promise<{ id: string; url: string } | { url: null }> {
     const active = await this.mediaModel
@@ -138,4 +89,34 @@ export class MediaService {
     }
     return { id: active.id, url: active.url };
   }
+
+  async listImages(filters: { type?: string; limit?: number; offset?: number }): Promise<{
+    images: Media[];
+    total: number;
+    hasMore: boolean;
+  }> {
+    const { type, limit = 50, offset = 0 } = filters;
+    
+    const query: any = {};
+    if (type) {
+      query.type = type;
+    }
+
+    const [images, total] = await Promise.all([
+      this.mediaModel
+        .find(query)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(offset)
+        .exec(),
+      this.mediaModel.countDocuments(query)
+    ]);
+
+    return {
+      images,
+      total,
+      hasMore: offset + images.length < total
+    };
+  }
+
 }

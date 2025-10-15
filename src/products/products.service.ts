@@ -13,6 +13,7 @@ import { Product } from './schemas/product.schema';
 import { CreateProductDto } from './dtos/create-product.dto';
 import { UpdateProductDto } from './dtos/update-product.dto';
 import { SimplePromotionsService } from '../promotions/simple-promotions.service';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class ProductsService {
@@ -22,6 +23,7 @@ export class ProductsService {
     @InjectModel(Product.name) private productModel: Model<Product>,
     @Inject(forwardRef(() => SimplePromotionsService)) 
     private promotionsService: SimplePromotionsService,
+    private mediaService: MediaService,
   ) {}
 
   async findAll(query: any): Promise<{ products: Product[]; total: number; page: number; totalPages: number }> {
@@ -133,6 +135,43 @@ export class ProductsService {
       throw new ForbiddenException('Only admins can create products');
     }
     const product = new this.productModel(createProductDto);
+    return product.save();
+  }
+
+  async createWithImages(
+    createProductDto: any,
+    images: Express.Multer.File[],
+    user: any,
+  ): Promise<Product> {
+    if (user.role !== 'admin') {
+      throw new ForbiddenException('Only admins can create products');
+    }
+
+    // Procesar las imágenes
+    const imageUrls: string[] = [];
+    
+    if (images && images.length > 0) {
+      for (const image of images) {
+        // Subir cada imagen al sistema de media
+        const media = await this.mediaService.uploadFile(image, { type: 'product' }, user);
+        imageUrls.push(media.url);
+      }
+    }
+
+    // Preparar datos del producto
+    const productData = {
+      name: createProductDto.name,
+      description: createProductDto.description,
+      price: parseFloat(createProductDto.price),
+      category: createProductDto.category,
+      sizes: createProductDto.sizes ? createProductDto.sizes.split(',').map(s => s.trim()) : [],
+      stock: parseInt(createProductDto.stock),
+      images: imageUrls,
+      isPreorder: createProductDto.isPreorder === 'true',
+      isFeatured: createProductDto.isFeatured === 'true',
+    };
+
+    const product = new this.productModel(productData);
     return product.save();
   }
 

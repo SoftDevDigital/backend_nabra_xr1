@@ -26,7 +26,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiTags } 
 export class MediaController {
   constructor(private mediaService: MediaService) {}
 
-  @ApiOperation({ summary: 'Subir imagen desde archivo', description: 'Recibe una imagen como archivo y la convierte a URL guardándola en la base de datos.' })
+  @ApiOperation({ summary: 'Subir imagen', description: 'Recibe una imagen como archivo y la guarda en el servidor.' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ 
     schema: { 
@@ -39,7 +39,7 @@ export class MediaController {
     } 
   })
   @Roles('admin')
-  @Post('upload/file')
+  @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -87,68 +87,60 @@ export class MediaController {
       type: type
     });
     
-    const uploadDto: UploadDto = { type, url: '' }; // url no se usa en uploadFile
+    const uploadDto: UploadDto = { type };
     return this.mediaService.uploadFile(file, uploadDto, req.user);
   }
 
-  @ApiOperation({ summary: 'Registrar imagen por URL', description: 'Recibe una URL de imagen y la registra en media.' })
-  @ApiBody({ schema: { type: 'object', properties: { url: { type: 'string', example: 'https://cdn.example.com/image.jpg' }, type: { type: 'string', enum: ['product', 'cover'] } } } })
-  @Roles('admin')
-  @Post('upload/url')
-  async uploadByUrl(
-    @Body() uploadDto: UploadDto,
-    @Request() req,
-  ): Promise<Media> {
-    return this.mediaService.uploadByUrl(uploadDto, req.user);
-  }
 
-  @ApiOperation({ summary: 'Obtener media', description: 'Obtiene los metadatos de un archivo multimedia por ID.' })
+  @ApiOperation({ summary: 'Ver imagen', description: 'Obtiene información de una imagen por ID.' })
   @Public()
-  @ApiParam({ name: 'id', description: 'ID de media' })
+  @ApiParam({ name: 'id', description: 'ID de imagen' })
   @Get(':id')
-  async getFile(@Param('id') id: string): Promise<Media> {
+  async getImage(@Param('id') id: string): Promise<Media> {
     return this.mediaService.getFile(id);
   }
 
-  @ApiOperation({ summary: 'Obtener URL de imagen', description: 'Obtiene la URL completa de una imagen para renderizar en el frontend.' })
-  @Public()
-  @ApiParam({ name: 'id', description: 'ID de media' })
-  @Get(':id/url')
-  async getFileUrl(@Param('id') id: string) {
-    return this.mediaService.getFileUrl(id);
-  }
-
-  @ApiOperation({ summary: 'Eliminar media', description: 'Elimina un archivo multimedia por ID.' })
-  @ApiParam({ name: 'id', description: 'ID de media' })
+  @ApiOperation({ summary: 'Eliminar imagen', description: 'Elimina una imagen por ID.' })
+  @ApiParam({ name: 'id', description: 'ID de imagen' })
   @Roles('admin')
   @Delete(':id')
-  async deleteFile(@Param('id') id: string, @Request() req): Promise<void> {
+  async deleteImage(@Param('id') id: string, @Request() req): Promise<void> {
     return this.mediaService.deleteFile(id, req.user);
   }
 
-  @ApiOperation({ summary: 'Marcar como portada', description: 'Marca una imagen como portada de un recurso.' })
-  @ApiParam({ name: 'id', description: 'ID de media' })
+  @ApiOperation({ summary: 'Listar imágenes', description: 'Lista todas las imágenes.' })
   @Roles('admin')
-  @Post('cover-image/:id')
+  @Get()
+  async listImages() {
+    return this.mediaService.listImages({});
+  }
+
+  @ApiOperation({ summary: 'Marcar como portada', description: 'Marca una imagen como portada.' })
+  @ApiParam({ name: 'id', description: 'ID de imagen' })
+  @Roles('admin')
+  @Post(':id/set-cover')
   async setCoverImage(@Param('id') id: string, @Request() req): Promise<Media> {
     return this.mediaService.setCoverImage(id, req.user);
   }
 
-  @ApiOperation({ summary: 'Desactivar portada', description: 'Desactiva la imagen como portada.' })
-  @ApiParam({ name: 'id', description: 'ID de media' })
-  @Roles('admin')
-  @Post('cover-image/:id/deactivate')
-  async deactivateCoverImage(
-    @Param('id') id: string,
-    @Request() req,
-  ): Promise<Media> {
-    return this.mediaService.deactivateCoverImage(id, req.user);
+  @ApiOperation({ summary: 'Ver portada activa', description: 'Obtiene la portada activa.' })
+  @Public()
+  @Get('cover/active')
+  async getActiveCover() {
+    return this.mediaService.getActiveCoverUrl();
   }
 
-  @ApiOperation({ summary: 'Portada activa (URL)', description: 'Devuelve la URL de la imagen de portada activa.' })
-  @Public()
-  @Get('cover-image/active/url')
-  async getActiveCoverUrl() {
-    return this.mediaService.getActiveCoverUrl();
+  @ApiOperation({ summary: 'Galería de productos', description: 'Lista todas las imágenes de productos disponibles.' })
+  @Roles('admin')
+  @Get('gallery/products')
+  async getProductGallery() {
+    return this.mediaService.listImages({ type: 'product' });
+  }
+
+  @ApiOperation({ summary: 'Galería de portadas', description: 'Lista todas las imágenes de portadas disponibles.' })
+  @Roles('admin')
+  @Get('gallery/covers')
+  async getCoverGallery() {
+    return this.mediaService.listImages({ type: 'cover' });
   }
 }

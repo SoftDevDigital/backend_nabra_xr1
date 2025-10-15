@@ -8,6 +8,8 @@ import {
   Body,
   Query,
   Request,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dtos/create-product.dto';
@@ -16,12 +18,19 @@ import { CategoryResponseDto, CategoryProductsResponseDto, CategoryStatsResponse
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Product } from './schemas/product.schema';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags, ApiConsumes } from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import { MediaService } from '../media/media.service';
 
 @ApiTags('Products')
 @Controller('products')
 export class ProductsController {
-  constructor(private productsService: ProductsService) {}
+  constructor(
+    private productsService: ProductsService,
+    private mediaService: MediaService
+  ) {}
 
   @Public()
   @ApiOperation({ summary: 'Buscar productos', description: 'Busca productos por texto libre en nombre, descripción o categorías.' })
@@ -125,15 +134,57 @@ export class ProductsController {
 
   @Roles('admin')
   @ApiBearerAuth('bearer')
-  @ApiOperation({ summary: 'Crear producto', description: 'Crea un nuevo producto. Requiere rol admin.' })
-  @ApiBody({ type: CreateProductDto })
-  @ApiResponse({ status: 201, description: 'Producto creado' })
+  @ApiOperation({ summary: 'Crear producto con imágenes', description: 'Crea un nuevo producto con imágenes. Requiere rol admin.' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ 
+    schema: { 
+      type: 'object', 
+      properties: { 
+        name: { type: 'string', description: 'Nombre del producto' },
+        description: { type: 'string', description: 'Descripción del producto' },
+        price: { type: 'number', description: 'Precio del producto' },
+        category: { type: 'string', description: 'Categoría del producto' },
+        sizes: { type: 'string', description: 'Tallas separadas por coma (ej: "35,36,37")' },
+        stock: { type: 'number', description: 'Stock disponible' },
+        isPreorder: { type: 'boolean', description: 'Es preventa (opcional)' },
+        isFeatured: { type: 'boolean', description: 'Es destacado (opcional)' },
+        images: { type: 'array', items: { type: 'string', format: 'binary' }, description: 'Imágenes del producto' }
+      },
+      required: ['name', 'description', 'price', 'category', 'sizes', 'stock']
+    } 
+  })
+  @ApiResponse({ status: 201, description: 'Producto creado con imágenes' })
   @Post()
+  @UseInterceptors(
+    FilesInterceptor('images', 10, {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (req, file, cb) => {
+          const randomName = Array(32)
+            .fill(null)
+            .map(() => Math.round(Math.random() * 16).toString(16))
+            .join('');
+          return cb(null, `${randomName}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new Error('Solo se permiten archivos JPEG y PNG'), false);
+        }
+      },
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB por imagen
+      },
+    }),
+  )
   async create(
-    @Body() createProductDto: CreateProductDto,
+    @Body() createProductDto: any,
+    @UploadedFiles() images: Express.Multer.File[],
     @Request() req,
   ): Promise<Product> {
-    return this.productsService.create(createProductDto, req.user);
+    return this.productsService.createWithImages(createProductDto, images, req.user);
   }
 
   @Roles('admin')
