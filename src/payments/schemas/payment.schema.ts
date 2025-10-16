@@ -52,6 +52,7 @@ export class Payment extends Document {
     price: number;
     currency?: string;
     productId?: string; // ID del producto para trazabilidad del stock
+    size?: string; // Talle del producto
   }[];
 
   @Prop()

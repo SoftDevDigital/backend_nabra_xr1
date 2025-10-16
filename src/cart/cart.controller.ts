@@ -72,7 +72,7 @@ export class CartController {
   })
   @Get()
   async getCart(@Request() req) {
-    return this.cartService.getCartSummaryWithDiscounts(req.user.userId);
+    return this.cartService.getCart(req.user.userId);
   }
 
   @ApiOperation({ summary: 'Agregar al carrito', description: 'Agrega un producto al carrito del usuario.' })
@@ -114,7 +114,7 @@ export class CartController {
   @ApiOperation({ summary: 'Validar carrito', description: 'Valida stock, disponibilidad y reglas de negocio para checkout.' })
   @Get('validate')
   async validateCart(@Request() req) {
-    return this.cartService.validateCartForCheckout(req.user.userId);
+    return this.cartService.validateCartStock(req.user.userId);
   }
 
   @ApiOperation({ summary: 'Vaciar carrito', description: 'Elimina todos los items del carrito.' })
@@ -149,6 +149,7 @@ export class CartController {
   ) {
     return this.cartService.getCartSummaryWithDiscounts(req.user.userId, body.couponCode);
   }
+
 
   @ApiOperation({ 
     summary: 'Carrito con promociones actualizadas', 

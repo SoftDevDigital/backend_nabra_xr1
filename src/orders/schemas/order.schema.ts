@@ -29,6 +29,7 @@ export class Order extends Document {
         },
         // Información de stock
         reservedStock: { type: Number, default: 0 },
+        reservedStockSize: { type: String, default: null }, // Talle del stock reservado
         stockReleased: { type: Boolean, default: false },
       },
     ],
@@ -50,6 +51,7 @@ export class Order extends Document {
       sku: string;
     };
     reservedStock: number;
+    reservedStockSize: string;
     stockReleased: boolean;
   }[];
 

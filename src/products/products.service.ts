@@ -159,13 +159,39 @@ export class ProductsService {
     }
 
     // Preparar datos del producto
+    const sizes = createProductDto.sizes ? createProductDto.sizes.split(',').map(s => s.trim()) : [];
+    
+    // Crear stockBySize a partir de los talles y stock individual por talle
+    let stockBySize: { [size: string]: number } = {};
+    if (createProductDto.stockBySize) {
+      // Si viene stockBySize directamente
+      stockBySize = createProductDto.stockBySize;
+    } else {
+      // Si viene stock individual por talle en el formato: "35:10,36:20,37:15"
+      if (createProductDto.stockBySizes) {
+        const stockEntries = createProductDto.stockBySizes.split(',');
+        stockEntries.forEach(entry => {
+          const [size, stock] = entry.trim().split(':');
+          if (size && stock) {
+            stockBySize[size.trim()] = parseInt(stock.trim());
+          }
+        });
+      } else {
+        // Fallback: distribuir stock general entre talles (solo para compatibilidad)
+        const stockPerSize = createProductDto.stock ? Math.floor(parseInt(createProductDto.stock) / sizes.length) : 0;
+        sizes.forEach(size => {
+          stockBySize[size] = stockPerSize;
+        });
+      }
+    }
+
     const productData = {
       name: createProductDto.name,
       description: createProductDto.description,
       price: parseFloat(createProductDto.price),
       category: createProductDto.category,
-      sizes: createProductDto.sizes ? createProductDto.sizes.split(',').map(s => s.trim()) : [],
-      stock: parseInt(createProductDto.stock),
+      sizes,
+      stockBySize,
       images: imageUrls,
       isPreorder: createProductDto.isPreorder === 'true',
       isFeatured: createProductDto.isFeatured === 'true',
@@ -221,7 +247,7 @@ export class ProductsService {
 
   // ===== GESTIÓN DE STOCK =====
   
-  async checkStockAvailability(productId: string, requiredQuantity: number): Promise<{ available: boolean; currentStock: number; message?: string }> {
+  async checkStockAvailability(productId: string, requiredQuantity: number, size?: string): Promise<{ available: boolean; currentStock: number; message?: string }> {
     const product = await this.productModel.findById(productId);
     if (!product) {
       throw new NotFoundException(`Product with ID ${productId} not found`);
@@ -230,102 +256,168 @@ export class ProductsService {
     if (product.isPreorder) {
       return {
         available: true,
-        currentStock: product.stock,
+        currentStock: 999, // Valor simbólico para preventa
         message: 'Preorder item - stock validation bypassed'
       };
     }
 
-    const available = product.stock >= requiredQuantity;
+    if (!size) {
+      // Si no se especifica talle, verificar stock total
+      const totalStock = Object.values(product.stockBySize || {}).reduce((sum, stock) => sum + stock, 0);
+      const available = totalStock >= requiredQuantity;
+      return {
+        available,
+        currentStock: totalStock,
+        message: available ? undefined : `Insufficient total stock. Available: ${totalStock}, Required: ${requiredQuantity}`
+      };
+    }
+
+    // Verificar stock por talle específico
+    const stockForSize = product.stockBySize?.[size] || 0;
+    const available = stockForSize >= requiredQuantity;
     return {
       available,
-      currentStock: product.stock,
-      message: available ? undefined : `Insufficient stock. Available: ${product.stock}, Required: ${requiredQuantity}`
+      currentStock: stockForSize,
+      message: available ? undefined : `Insufficient stock for size ${size}. Available: ${stockForSize}, Required: ${requiredQuantity}`
     };
   }
 
-  async reserveStock(productId: string, quantity: number): Promise<void> {
+  async reserveStock(productId: string, quantity: number, size?: string): Promise<void> {
+    // Usar findOneAndUpdate para operación atómica
+    if (size) {
+      // Reservar stock por talle específico
+      const result = await this.productModel.findOneAndUpdate(
+        { 
+          _id: productId,
+          [`stockBySize.${size}`]: { $gte: quantity }
+        },
+        { 
+          $inc: { [`stockBySize.${size}`]: -quantity }
+        },
+        { new: true }
+      );
+      
+      if (!result) {
+        const product = await this.productModel.findById(productId);
+        const stockForSize = product?.stockBySize?.[size] || 0;
+        throw new BadRequestException(`Insufficient stock for size ${size}. Available: ${stockForSize}, Required: ${quantity}`);
+      }
+    } else {
+      // Para reserva sin talle específico, validar stock total primero
+      const product = await this.productModel.findById(productId);
+      if (!product) {
+        throw new NotFoundException(`Product with ID ${productId} not found`);
+      }
+      
+      if (product.isPreorder) {
+        return; // No reservar stock para preventas
+      }
+      
+      const totalStock = Object.values(product.stockBySize || {}).reduce((sum, stock) => sum + stock, 0);
+      if (totalStock < quantity) {
+        throw new BadRequestException(`Insufficient total stock. Available: ${totalStock}, Required: ${quantity}`);
+      }
+      
+      // Distribuir la cantidad entre los talles disponibles
+      let remainingQuantity = quantity;
+      for (const [sizeKey, stock] of Object.entries(product.stockBySize || {})) {
+        if (remainingQuantity <= 0) break;
+        const toReserve = Math.min(stock, remainingQuantity);
+        
+        await this.productModel.findOneAndUpdate(
+          { _id: productId },
+          { $inc: { [`stockBySize.${sizeKey}`]: -toReserve } }
+        );
+        
+        remainingQuantity -= toReserve;
+      }
+    }
+  }
+
+  async releaseStock(productId: string, quantity: number, size?: string): Promise<void> {
     const product = await this.productModel.findById(productId);
     if (!product) {
       throw new NotFoundException(`Product with ID ${productId} not found`);
     }
 
-    if (!product.isPreorder && product.stock < quantity) {
-      throw new BadRequestException(`Insufficient stock for product ${product.name}. Available: ${product.stock}, Required: ${quantity}`);
-    }
-
     if (!product.isPreorder) {
-      product.stock -= quantity;
-      await product.save();
+      if (size) {
+        // Liberar stock por talle específico usando operación atómica
+        await this.productModel.findOneAndUpdate(
+          { _id: productId },
+          { $inc: { [`stockBySize.${size}`]: quantity } }
+        );
+      } else {
+        // Liberar stock total (agregar al primer talle disponible)
+        const firstSize = Object.keys(product.stockBySize || {})[0];
+        if (firstSize) {
+          await this.productModel.findOneAndUpdate(
+            { _id: productId },
+            { $inc: { [`stockBySize.${firstSize}`]: quantity } }
+          );
+        }
+      }
     }
   }
 
-  async releaseStock(productId: string, quantity: number): Promise<void> {
-    const product = await this.productModel.findById(productId);
-    if (!product) {
-      throw new NotFoundException(`Product with ID ${productId} not found`);
-    }
-
-    if (!product.isPreorder) {
-      product.stock += quantity;
-      await product.save();
-    }
-  }
-
-  async bulkReserveStock(items: { productId: string; quantity: number }[]): Promise<{ success: boolean; errors: string[] }> {
+  async bulkReserveStock(items: { productId: string; quantity: number; size?: string }[]): Promise<{ success: boolean; errors: string[] }> {
     const errors: string[] = [];
-    const reservations: { productId: string; quantity: number }[] = [];
+    const successfulReservations: { productId: string; quantity: number; size?: string }[] = [];
 
-    // Primero validamos todo el stock (sin transacción, solo lectura)
+    // Intentar reservar cada item individualmente con validación atómica
     for (const item of items) {
       try {
-        const stockCheck = await this.checkStockAvailability(item.productId, item.quantity);
-        if (!stockCheck.available) {
-          errors.push(`${stockCheck.message}`);
-        } else {
-          reservations.push(item);
-        }
+        // Usar reserveStock que ya tiene validación atómica
+        await this.reserveStock(item.productId, item.quantity, item.size);
+        successfulReservations.push(item);
+        this.logger.log(`✅ Stock reserved: ${item.productId} - Size: ${item.size} - Quantity: ${item.quantity}`);
       } catch (error) {
-        errors.push(`Product ${item.productId}: ${error.message}`);
+        // Si falla una reserva, liberar las reservas exitosas anteriores
+        this.logger.error(`❌ Failed to reserve stock for ${item.productId}:`, error);
+        
+        // Liberar stock de reservas exitosas anteriores
+        for (const successful of successfulReservations) {
+          try {
+            await this.releaseStock(successful.productId, successful.quantity, successful.size);
+            this.logger.log(`🔄 Released stock due to failure: ${successful.productId} - Size: ${successful.size} - Quantity: ${successful.quantity}`);
+          } catch (releaseError) {
+            this.logger.error(`❌ Failed to release stock for ${successful.productId}:`, releaseError);
+          }
+        }
+        
+        errors.push(`${error.message}`);
+        return { success: false, errors };
       }
     }
 
-    // Si hay errores de validación, no reservamos nada
-    if (errors.length > 0) {
-      return { success: false, errors };
-    }
-
-    // Reservamos el stock sin transacciones
-    try {
-      this.logger.log(`🔒 Starting bulk stock reservation for ${reservations.length} items`);
-      
-      for (const reservation of reservations) {
-        await this.reserveStock(reservation.productId, reservation.quantity);
-      }
-
-      this.logger.log(`✅ Bulk stock reservation completed successfully`);
-      
-      return { success: true, errors: [] };
-
-    } catch (error) {
-      this.logger.error(`❌ Bulk stock reservation failed:`, error);
-      
-      return { 
-        success: false, 
-        errors: [`Stock reservation failed: ${error.message}`] 
-      };
-    }
+    this.logger.log(`✅ Bulk stock reservation completed successfully for ${successfulReservations.length} items`);
+    return { success: true, errors: [] };
   }
 
-  async getStockStatus(productId: string): Promise<{ stock: number; isPreorder: boolean; isAvailable: boolean }> {
+  async getStockStatus(productId: string): Promise<{ 
+    stockBySize: { [size: string]: number }; 
+    totalStock: number;
+    isPreorder: boolean; 
+    isAvailable: boolean;
+    availableSizes: string[];
+  }> {
     const product = await this.productModel.findById(productId);
     if (!product) {
       throw new NotFoundException(`Product with ID ${productId} not found`);
     }
 
+    const stockBySize = product.stockBySize || {};
+    const totalStock = Object.values(stockBySize).reduce((sum, stock) => sum + stock, 0);
+    const availableSizes = Object.entries(stockBySize)
+      .filter(([_, stock]) => stock > 0)
+      .map(([size, _]) => size);
+
     return {
-      stock: product.stock,
+      stockBySize,
+      totalStock,
       isPreorder: product.isPreorder,
-      isAvailable: product.isPreorder || product.stock > 0
+      isAvailable: product.isPreorder || totalStock > 0,
+      availableSizes
     };
   }
 

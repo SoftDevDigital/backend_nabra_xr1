@@ -146,7 +146,7 @@ export class ShippingCalculatorService {
   // ===== CÁLCULO RÁPIDO DESDE CARRITO =====
 
   async calculateShippingFromCart(userId: string, addressId?: string): Promise<ShippingCalculationResponse> {
-    const cart = await this.cartService.getCart(userId);
+    const cart = await this.cartService.getCartForInternalUse(userId);
     
     if (!cart.items || cart.items.length === 0) {
       throw new BadRequestException('Cart is empty');
@@ -176,7 +176,7 @@ export class ShippingCalculatorService {
       this.logger.log(`Capturing shipping data and calculating total for user: ${userId}`);
 
       // 1. Obtener carrito del usuario
-      const cart = await this.cartService.getCart(userId);
+      const cart = await this.cartService.getCartForInternalUse(userId);
       
       if (!cart.items || cart.items.length === 0) {
         throw new BadRequestException('Cart is empty');

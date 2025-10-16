@@ -21,8 +21,8 @@ export class Product extends Document {
   @Prop({ type: [String], default: [] })
   images: string[]; // URLs de imágenes
 
-  @Prop({ required: true })
-  stock: number;
+  @Prop({ type: Object, required: true })
+  stockBySize: { [size: string]: number }; // e.g., { "35": 10, "36": 20, "37": 15 }
 
   @Prop({ default: false })
   isPreorder: boolean;

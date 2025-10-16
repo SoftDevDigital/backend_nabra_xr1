@@ -22,7 +22,8 @@ export class CartService {
     @Inject(forwardRef(() => DiscountCalculatorService)) private discountCalculatorService: DiscountCalculatorService,
   ) {}
 
-  async getCart(userId: string) {
+  // Método interno para obtener carrito sin validación (uso interno)
+  private async getCartInternal(userId: string): Promise<Cart> {
     let cart = await this.cartModel
       .findOne({ userId })
       .populate('items.product');
@@ -30,6 +31,29 @@ export class CartService {
       cart = await this.cartModel.create({ userId, items: [] });
     }
     return cart;
+  }
+
+  // Método para uso interno de otros servicios (retorna Cart original)
+  async getCartForInternalUse(userId: string): Promise<Cart> {
+    return this.getCartInternal(userId);
+  }
+
+  // Método público - SIEMPRE incluye validación automática
+  async getCart(userId: string) {
+    const cart = await this.getCartInternal(userId);
+
+    // Validación automática de stock - SIEMPRE incluida
+    const validation = await this.validateCartStock(userId);
+    
+    // Retornar carrito con validación incluida automáticamente
+    return {
+      ...cart.toObject(),
+      stockValidation: {
+        isValid: validation.isValid,
+        errors: validation.errors,
+        warnings: validation.warnings
+      }
+    };
   }
 
   async addToCart(userId: string, addToCartDto: AddToCartDto) {
@@ -58,7 +82,7 @@ export class CartService {
       throw new BadRequestException(`Size ${addToCartDto.size} is not available for this product`);
     }
 
-    const cart = await this.getCart(userId);
+    const cart = await this.getCartInternal(userId);
     const existingItem = cart.items.find((item) => {
       // Obtener el ID del producto correctamente
       let productId: string;
@@ -77,10 +101,11 @@ export class CartService {
       ? existingItem.quantity + addToCartDto.quantity
       : addToCartDto.quantity;
 
-    // Validar stock disponible
+    // Validar stock disponible POR TALLE
     const stockCheck = await this.productsService.checkStockAvailability(
       addToCartDto.productId, 
-      finalQuantity
+      finalQuantity,
+      addToCartDto.size // Pasar el talle específico
     );
 
     if (!stockCheck.available) {
@@ -128,7 +153,7 @@ export class CartService {
     itemId: string,
     updateCartDto: UpdateCartDto,
   ) {
-    const cart = await this.getCart(userId);
+    const cart = await this.getCartInternal(userId);
     const itemIndex = cart.items.findIndex(
       (item) => item._id.toString() === itemId,
     );
@@ -194,7 +219,7 @@ export class CartService {
   }
 
   async removeFromCart(userId: string, itemId: string) {
-    const cart = await this.getCart(userId);
+    const cart = await this.getCartInternal(userId);
     const itemExists = cart.items.some((item) => item._id.toString() === itemId);
     
     if (!itemExists) {
@@ -226,73 +251,6 @@ export class CartService {
   }
 
 
-  async validateCartForCheckout(userId: string): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
-    const cart = await this.getCart(userId);
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    if (!cart.items || cart.items.length === 0) {
-      errors.push('Cart is empty');
-      return { valid: false, errors, warnings };
-    }
-
-    // Validar cada item del carrito
-    for (const item of cart.items) {
-      try {
-        // Extraer el ID del producto correctamente
-        let productId: string;
-        
-        if (typeof item.product === 'string') {
-          productId = item.product;
-        } else if (item.product && typeof item.product === 'object') {
-          // Si es un objeto poblado, extraer el _id
-          productId = (item.product as any)._id?.toString() || (item.product as any).toString();
-        } else {
-          productId = (item.product as any).toString();
-        }
-
-        const product = await this.productsService.findById(productId);
-        
-        // Validar que el producto aún existe
-        if (!product) {
-          errors.push(`Product no longer exists`);
-          continue;
-        }
-
-        // Validar stock actual
-        const stockCheck = await this.productsService.checkStockAvailability(
-          productId, 
-          item.quantity
-        );
-
-        if (!stockCheck.available) {
-          if (stockCheck.currentStock === 0) {
-            errors.push(`${product.name} is out of stock`);
-          } else {
-            warnings.push(`${product.name}: Only ${stockCheck.currentStock} available (you have ${item.quantity} in cart)`);
-          }
-        }
-
-        // Validar talla si es requerida
-        if (product.sizes && product.sizes.length > 0) {
-          if (!item.size) {
-            errors.push(`Size is required for ${product.name}`);
-          } else if (!product.sizes.includes(item.size)) {
-            errors.push(`Size ${item.size} is no longer available for ${product.name}`);
-          }
-        }
-
-      } catch (error) {
-        errors.push(`Error validating product: ${error.message}`);
-      }
-    }
-
-    return { 
-      valid: errors.length === 0, 
-      errors, 
-      warnings 
-    };
-  }
 
   async getCartSummary(userId: string): Promise<{
     items: any[];
@@ -303,7 +261,7 @@ export class CartService {
     estimatedTotal: number;
     currency: string;
   }> {
-    const cart = await this.getCart(userId);
+    const cart = await this.getCartInternal(userId);
     
     let totalQuantity = 0;
     let subtotal = 0;
@@ -450,5 +408,137 @@ export class CartService {
       };
     }
   }
+
+  // ===== VALIDACIONES CRÍTICAS DE STOCK =====
+
+  async validateCartStock(userId: string): Promise<{
+    isValid: boolean;
+    errors: Array<{
+      productId: string;
+      productName: string;
+      size: string;
+      requestedQuantity: number;
+      availableStock: number;
+      message: string;
+    }>;
+    warnings: Array<{
+      productId: string;
+      productName: string;
+      size: string;
+      message: string;
+    }>;
+  }> {
+    const cart = await this.getCartInternal(userId);
+    if (!cart || cart.items.length === 0) {
+      return { isValid: true, errors: [], warnings: [] };
+    }
+
+    const errors: Array<{
+      productId: string;
+      productName: string;
+      size: string;
+      requestedQuantity: number;
+      availableStock: number;
+      message: string;
+    }> = [];
+    const warnings: Array<{
+      productId: string;
+      productName: string;
+      size: string;
+      message: string;
+    }> = [];
+
+    for (const item of cart.items) {
+      try {
+        // Obtener información del producto
+        let productId: string;
+        if (typeof item.product === 'object' && item.product._id) {
+          productId = item.product._id.toString();
+        } else {
+          productId = item.product.toString();
+        }
+
+        const product = await this.productsService.findById(productId);
+        if (!product) {
+          errors.push({
+            productId,
+            productName: 'Producto no encontrado',
+            size: item.size || 'N/A',
+            requestedQuantity: item.quantity,
+            availableStock: 0,
+            message: 'El producto ya no existe'
+          });
+          continue;
+        }
+
+        // Validar stock por talle
+        const stockCheck = await this.productsService.checkStockAvailability(
+          productId,
+          item.quantity,
+          item.size
+        );
+
+        if (!stockCheck.available) {
+          errors.push({
+            productId,
+            productName: product.name,
+            size: item.size || 'N/A',
+            requestedQuantity: item.quantity,
+            availableStock: stockCheck.currentStock,
+            message: stockCheck.message || 'Stock validation failed'
+          });
+        } else if (stockCheck.currentStock <= 2) {
+          // Advertencia si queda poco stock
+          warnings.push({
+            productId,
+            productName: product.name,
+            size: item.size || 'N/A',
+            message: `Quedan solo ${stockCheck.currentStock} unidades disponibles`
+          });
+        }
+
+        // Validar si el producto sigue activo/disponible
+        if (product.isPreorder) {
+          warnings.push({
+            productId,
+            productName: product.name,
+            size: item.size || 'N/A',
+            message: 'Este producto está en preventa'
+          });
+        }
+
+      } catch (error) {
+        errors.push({
+          productId: 'unknown',
+          productName: 'Error de validación',
+          size: item.size || 'N/A',
+          requestedQuantity: item.quantity,
+          availableStock: 0,
+          message: `Error al validar producto: ${error.message}`
+        });
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings
+    };
+  }
+
+  async validateCartBeforeCheckout(userId: string): Promise<void> {
+    const validation = await this.validateCartStock(userId);
+    
+    if (!validation.isValid) {
+      const errorMessages = validation.errors.map(error => 
+        `${error.productName} (Talle ${error.size}): ${error.message}`
+      ).join('; ');
+      
+      throw new BadRequestException(
+        `No se puede proceder al checkout. Problemas de stock: ${errorMessages}`
+      );
+    }
+  }
+
 
 }

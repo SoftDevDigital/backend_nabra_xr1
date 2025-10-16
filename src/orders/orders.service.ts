@@ -37,7 +37,7 @@ export class OrdersService {
 
   async createOrderFromPartial(userId: string, checkoutPartialDto: CheckoutPartialDto) {
     try {
-      const cart: Cart = await this.cartService.getCart(userId);
+      const cart: Cart = await this.cartService.getCartForInternalUse(userId);
       if (!cart) {
         throw new NotFoundException('No se encontró un carrito para el usuario con ID ' + userId);
       }
@@ -290,8 +290,9 @@ export class OrdersService {
           productName: item.name,
           productSnapshot: productSnapshot,
           reservedStock: item.quantity, // Reservar stock
+          reservedStockSize: item.size, // Talle del stock reservado
           stockReleased: false, // Stock no liberado inicialmente
-        });
+        } as any);
       }
 
       // Impuestos deshabilitados: establecemos tax = 0
@@ -715,10 +716,11 @@ export class OrdersService {
       for (const item of order.items) {
         if (item.product && !item.stockReleased) {
           try {
-            // Liberar stock en el producto
+            // Liberar stock en el producto (con talle específico)
             await this.productsService.releaseStock(
               item.product.toString(), 
-              item.reservedStock
+              item.reservedStock,
+              item.reservedStockSize || item.size
             );
             
             // Marcar como liberado
@@ -750,10 +752,11 @@ export class OrdersService {
       for (const item of order.items) {
         if (item.product && !item.stockReleased) {
           try {
-            // Reservar stock en el producto
+            // Reservar stock en el producto (con talle específico)
             await this.productsService.reserveStock(
               item.product.toString(), 
-              item.reservedStock
+              item.reservedStock,
+              item.size
             );
           } catch (error) {
             this.logger.error(`Error reserving stock for product ${item.product}:`, error);
@@ -775,7 +778,7 @@ export class OrdersService {
       const { shippingAddress, paymentMethod, couponCode, notes } = checkoutRequestDto;
       
       // Obtener carrito del usuario
-      const cart: Cart = await this.cartService.getCart(userId);
+      const cart: Cart = await this.cartService.getCartForInternalUse(userId);
       if (!cart) {
         throw new NotFoundException('Carrito no encontrado');
       }

@@ -34,8 +34,7 @@ export class UpdateProductDto {
   images?: string[];
 
   @IsOptional()
-  @IsNumber()
-  stock?: number;
+  stockBySize?: { [size: string]: number };
 
   @IsOptional()
   @IsBoolean()

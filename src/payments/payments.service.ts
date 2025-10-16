@@ -74,7 +74,7 @@ export class PaymentsService {
       });
 
       // Obtener el carrito del usuario primero
-      const cart = await this.cartService.getCart(userId);
+      const cart = await this.cartService.getCartForInternalUse(userId);
       
       if (!cart.items || cart.items.length === 0) {
         throw new BadRequestException({
@@ -84,15 +84,8 @@ export class PaymentsService {
         });
       }
 
-      // Validar el carrito antes de proceder
-      const validation = await this.cartService.validateCartForCheckout(userId);
-      if (!validation.valid) {
-        throw new BadRequestException({
-          message: `Cart validation failed: ${validation.errors.join(', ')}`,
-          error: 'CART_VALIDATION_FAILED',
-          statusCode: 400,
-        });
-      }
+      // Validar el stock del carrito antes de proceder
+      await this.cartService.validateCartBeforeCheckout(userId);
 
 
       // Preparar items para reserva de stock
@@ -110,7 +103,8 @@ export class PaymentsService {
 
         return {
           productId,
-          quantity: item.quantity
+          quantity: item.quantity,
+          size: item.size // Incluir el talle para reserva específica
         };
       });
 
@@ -272,6 +266,8 @@ export class PaymentsService {
             quantity: i.quantity,
             price: i.product.price,
             currency,
+            productId: i.product._id?.toString(),
+            size: i.size,
           })),
           approvalUrl: pref.init_point,
           metadata: metadataToSave,
@@ -342,7 +338,7 @@ export class PaymentsService {
   ): Promise<{ id: string; init_point: string }> {
     try {
       // Obtener el carrito del usuario
-      const cart = await this.cartService.getCart(userId);
+      const cart = await this.cartService.getCartForInternalUse(userId);
       
       if (!cart.items || cart.items.length === 0) {
         throw new BadRequestException('Cart is empty');
@@ -464,6 +460,8 @@ export class PaymentsService {
             quantity: item.requestedQuantity,
             price: (item.cartItem.product as any).price,
             currency,
+            productId: (item.cartItem.product as any)._id?.toString(),
+            size: item.cartItem.size,
           })),
           approvalUrl: pref.init_point,
           metadata: {
@@ -888,6 +886,21 @@ export class PaymentsService {
         payment.status = PaymentStatus.CANCELLED;
         payment.errorMessage = `MP status: ${status}`;
         await payment.save();
+        
+        // LIBERAR STOCK RESERVADO cuando el pago falla
+        try {
+          console.log(`🔄 [WEBHOOK] Liberando stock reservado para pago cancelado: ${payment._id}`);
+          for (const item of payment.items) {
+            if (item.productId && item.size) {
+              await this.productsService.releaseStock(item.productId, item.quantity, item.size);
+              console.log(`✅ [WEBHOOK] Stock liberado: ${item.productId} - Talle ${item.size} - Cantidad ${item.quantity}`);
+            }
+          }
+          console.log(`✅ [WEBHOOK] Stock liberado exitosamente para pago cancelado`);
+        } catch (stockError) {
+          console.error(`❌ [WEBHOOK] Error liberando stock:`, stockError);
+          this.logger.error(`Failed to release stock for cancelled payment:`, stockError);
+        }
       } else if (status === 'in_process' || status === 'pending') {
         payment.status = PaymentStatus.PENDING;
         await payment.save();

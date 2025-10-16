@@ -145,12 +145,12 @@ export class ProductsController {
         price: { type: 'number', description: 'Precio del producto' },
         category: { type: 'string', description: 'Categoría del producto' },
         sizes: { type: 'string', description: 'Tallas separadas por coma (ej: "35,36,37")' },
-        stock: { type: 'number', description: 'Stock disponible' },
+        stockBySizes: { type: 'string', description: 'Stock por talle separado por coma (ej: "35:10,36:20,37:15")' },
         isPreorder: { type: 'boolean', description: 'Es preventa (opcional)' },
         isFeatured: { type: 'boolean', description: 'Es destacado (opcional)' },
         images: { type: 'array', items: { type: 'string', format: 'binary' }, description: 'Imágenes del producto' }
       },
-      required: ['name', 'description', 'price', 'category', 'sizes', 'stock']
+      required: ['name', 'description', 'price', 'category', 'sizes', 'stockBySizes']
     } 
   })
   @ApiResponse({ status: 201, description: 'Producto creado con imágenes' })

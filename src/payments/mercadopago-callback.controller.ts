@@ -18,6 +18,7 @@ import { ApiTags, ApiOperation, ApiBody, ApiQuery, ApiResponse, ApiBearerAuth } 
 import type { Response } from 'express';
 import { PaymentsService } from './payments.service';
 import { OrdersService } from '../orders/orders.service';
+import { ProductsService } from '../products/products.service';
 import { NotificationsService } from '../notifications/services/notifications.service';
 import { Public } from '../common/decorators/public.decorator';
 import { MercadoPagoCheckoutDto } from './dtos/mercadopago-checkout.dto';
@@ -34,6 +35,7 @@ export class MercadoPagoCallbackController {
     @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService,
     private notificationsService: NotificationsService,
     private cartService: CartService,
+    @Inject(forwardRef(() => ProductsService)) private productsService: ProductsService,
   ) {}
 
   /**
@@ -173,8 +175,9 @@ export class MercadoPagoCallbackController {
       await this.cartService.clearCart(userId);
       this.logger.log(`Cart cleared for user ${userId}`);
 
-      // NOTA: El stock ya fue reservado cuando se creó el checkout.
-      // No es necesario decrementar nuevamente aquí.
+      // IMPORTANTE: El stock fue reservado al crear el checkout.
+      // Ahora que el pago es exitoso, el stock reservado se convierte en vendido.
+      // No necesitamos hacer nada más - el stock ya está descontado.
 
       // Crear la orden automáticamente con la info guardada en metadata
       try {
@@ -227,6 +230,7 @@ export class MercadoPagoCallbackController {
             quantity: item.quantity,
             price: item.price,
             productId: item.productId,
+            size: item.size,
           })),
           totalAmount: payment.amount,
           currency: payment.currency,
@@ -287,6 +291,28 @@ export class MercadoPagoCallbackController {
   ) {
     try {
       this.logger.warn(`MercadoPago failure callback received: payment_id=${paymentId}, status=${status}`);
+
+      // Buscar el pago y liberar stock si es necesario
+      try {
+        const payment = await this.paymentsService.findByMercadoPagoPreference(externalReference);
+        if (payment && payment.status === 'pending') {
+          console.log(`🔄 [FAILURE-CALLBACK] Liberando stock reservado para pago fallido: ${payment._id}`);
+          
+          // Liberar stock reservado
+          for (const item of payment.items) {
+            if (item.productId && item.size) {
+              await this.productsService.releaseStock(item.productId, item.quantity, item.size);
+              console.log(`✅ [FAILURE-CALLBACK] Stock liberado: ${item.productId} - Talle ${item.size} - Cantidad ${item.quantity}`);
+            }
+          }
+          
+          // Marcar pago como cancelado
+          await this.paymentsService.updatePaymentStatus((payment as any)._id.toString(), PaymentStatus.CANCELLED, `Payment failed with status: ${status}`);
+          console.log(`✅ [FAILURE-CALLBACK] Pago marcado como cancelado y stock liberado`);
+        }
+      } catch (stockError) {
+        console.error(`❌ [FAILURE-CALLBACK] Error liberando stock:`, stockError);
+      }
 
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       const redirectUrl = `${frontendUrl}/payment/failure?payment_id=${paymentId}&status=${status}&external_reference=${externalReference}`;

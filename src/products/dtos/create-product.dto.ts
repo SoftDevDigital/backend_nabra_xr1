@@ -28,8 +28,8 @@ export class CreateProductDto {
   @IsOptional()
   images: string[];
 
-  @IsNumber()
-  stock: number;
+  @IsOptional()
+  stockBySize: { [size: string]: number };
 
   @IsBoolean()
   @IsOptional()
