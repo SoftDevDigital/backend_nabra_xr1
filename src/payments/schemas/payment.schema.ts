@@ -10,6 +10,7 @@ export enum PaymentStatus {
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
   FAILED = 'failed',
+  EXPIRED = 'expired', // Reserva expirada por timeout
 }
 
 export enum PaymentProvider {
@@ -69,6 +70,13 @@ export class Payment extends Document {
 
   @Prop({ type: Object })
   metadata?: Record<string, any>;
+
+  // Campos para control de timeout de reservas
+  @Prop({ default: Date.now })
+  reservedAt: Date;
+
+  @Prop({ default: 30 }) // 30 minutos por defecto
+  reservationTimeoutMinutes: number;
 }
 
 export const PaymentSchema = SchemaFactory.createForClass(Payment);
@@ -76,6 +84,7 @@ PaymentSchema.index({ userId: 1 });
 PaymentSchema.index({ providerPaymentId: 1 });
 PaymentSchema.index({ status: 1 });
 PaymentSchema.index({ createdAt: -1 });
+PaymentSchema.index({ reservedAt: 1, status: 1 }); // Para búsquedas eficientes de reservas expiradas
 
 
 

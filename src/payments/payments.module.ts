@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { MercadoPagoService } from './mercadopago.service';
@@ -14,6 +15,7 @@ import { UsersModule } from '../users/users.module';
 @Module({
   imports: [
     ConfigModule,
+    ScheduleModule.forRoot(),
     MongooseModule.forFeature([{ name: Payment.name, schema: PaymentSchema }]),
     forwardRef(() => CartModule),
     ProductsModule,

@@ -6,6 +6,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Payment, PaymentDocument, PaymentStatus, PaymentProvider } from './schemas/payment.schema';
@@ -968,6 +969,133 @@ export class PaymentsService {
       this.logger.log(`Partial cart update completed for user ${payment.userId}`);
     } catch (error) {
       this.logger.error('Error updating partial cart:', error);
+      throw error;
+    }
+  }
+
+  // ========================================
+  // CRON JOB: Liberación automática de reservas expiradas
+  // ========================================
+
+  /**
+   * Cron job que se ejecuta cada 5 minutos para liberar reservas expiradas
+   * Busca pagos pendientes que hayan superado su tiempo de reserva
+   */
+  @Cron('*/5 * * * *') // Cada 5 minutos
+  async releaseExpiredReservations(): Promise<void> {
+    try {
+      this.logger.log('🕐 [CRON] Iniciando verificación de reservas expiradas...');
+      
+      // Buscar pagos pendientes que hayan expirado
+      const expiredPayments = await this.paymentModel.find({
+        status: PaymentStatus.PENDING,
+        reservedAt: { 
+          $lt: new Date(Date.now() - 30 * 60 * 1000) // 30 minutos atrás
+        }
+      }).exec();
+
+      if (expiredPayments.length === 0) {
+        this.logger.log('✅ [CRON] No hay reservas expiradas');
+        return;
+      }
+
+      this.logger.log(`🔄 [CRON] Encontradas ${expiredPayments.length} reservas expiradas`);
+
+      let releasedCount = 0;
+      let errorCount = 0;
+
+      for (const payment of expiredPayments) {
+        try {
+          await this.releaseExpiredPaymentStock(payment);
+          releasedCount++;
+          this.logger.log(`✅ [CRON] Reserva liberada para pago ${payment._id}`);
+        } catch (error) {
+          errorCount++;
+          this.logger.error(`❌ [CRON] Error liberando reserva ${payment._id}:`, error);
+        }
+      }
+
+      this.logger.log(`🏁 [CRON] Proceso completado: ${releasedCount} liberadas, ${errorCount} errores`);
+      
+    } catch (error) {
+      this.logger.error('❌ [CRON] Error crítico en liberación de reservas:', error);
+    }
+  }
+
+  /**
+   * Libera el stock reservado de un pago expirado
+   */
+  private async releaseExpiredPaymentStock(payment: PaymentDocument): Promise<void> {
+    try {
+      // Liberar stock de cada item del pago
+      for (const item of payment.items) {
+        if (item.productId && item.size) {
+          await this.productsService.releaseStock(
+            item.productId, 
+            item.quantity, 
+            item.size
+          );
+          
+          this.logger.log(
+            `🔄 [CRON] Stock liberado: Producto ${item.productId} - ` +
+            `Talle ${item.size} - Cantidad ${item.quantity}`
+          );
+        }
+      }
+
+      // Marcar el pago como expirado
+      payment.status = PaymentStatus.EXPIRED;
+      payment.errorMessage = 'Reserva expirada por timeout (30 minutos)';
+      await payment.save();
+
+      this.logger.log(`✅ [CRON] Pago ${payment._id} marcado como expirado`);
+      
+    } catch (error) {
+      this.logger.error(`❌ [CRON] Error liberando stock del pago ${payment._id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Método manual para liberar reservas expiradas (para testing o uso administrativo)
+   */
+  async manuallyReleaseExpiredReservations(): Promise<{ 
+    released: number; 
+    errors: number; 
+    details: string[] 
+  }> {
+    this.logger.log('🔧 [MANUAL] Liberación manual de reservas expiradas...');
+    
+    const result = {
+      released: 0,
+      errors: 0,
+      details: [] as string[]
+    };
+
+    try {
+      const expiredPayments = await this.paymentModel.find({
+        status: PaymentStatus.PENDING,
+        reservedAt: { 
+          $lt: new Date(Date.now() - 30 * 60 * 1000)
+        }
+      }).exec();
+
+      for (const payment of expiredPayments) {
+        try {
+          await this.releaseExpiredPaymentStock(payment);
+          result.released++;
+          result.details.push(`✅ Pago ${payment._id} liberado exitosamente`);
+        } catch (error) {
+          result.errors++;
+          result.details.push(`❌ Error en pago ${payment._id}: ${error.message}`);
+        }
+      }
+
+      this.logger.log(`🏁 [MANUAL] Proceso completado: ${result.released} liberadas, ${result.errors} errores`);
+      return result;
+      
+    } catch (error) {
+      this.logger.error('❌ [MANUAL] Error crítico:', error);
       throw error;
     }
   }

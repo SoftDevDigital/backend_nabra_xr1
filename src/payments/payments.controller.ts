@@ -12,6 +12,7 @@ import {
   HttpCode,
   BadRequestException,
   Logger,
+  UseGuards,
 } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -22,6 +23,8 @@ import { PaymentWithShippingDto } from './dtos/payment-with-shipping.dto';
 import { CheckoutWithShippingDto } from './dtos/checkout-with-shipping.dto';
 import { MercadoPagoService } from './mercadopago.service';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @ApiTags('Payments')
 @ApiBearerAuth('bearer')
@@ -128,6 +131,39 @@ export class PaymentsController {
       limitNum,
       offsetNum,
     );
+  }
+
+  // ========================================
+  // ENDPOINT ADMINISTRATIVO: Liberación manual de reservas
+  // ========================================
+
+  @ApiOperation({ 
+    summary: 'Liberar reservas expiradas (Admin)', 
+    description: 'Libera manualmente todas las reservas expiradas. Útil para testing o situaciones especiales.' 
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Reservas liberadas exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        released: { type: 'number', description: 'Número de reservas liberadas' },
+        errors: { type: 'number', description: 'Número de errores encontrados' },
+        details: { 
+          type: 'array', 
+          items: { type: 'string' },
+          description: 'Detalles de cada operación'
+        }
+      }
+    }
+  })
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @Post('admin/release-expired-reservations')
+  @HttpCode(HttpStatus.OK)
+  async releaseExpiredReservations(@Request() req) {
+    this.logger.log(`🔧 [ADMIN] ${req.user.email} ejecutando liberación manual de reservas`);
+    return this.paymentsService.manuallyReleaseExpiredReservations();
   }
 
 }
