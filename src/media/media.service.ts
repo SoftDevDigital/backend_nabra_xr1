@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -76,6 +77,38 @@ export class MediaService {
       { $set: { active: false } },
     );
     media.active = true;
+    return media.save();
+  }
+
+  async setCoverImageFromUrl(url: string, user: any): Promise<Media> {
+    if (user.role !== 'admin') {
+      throw new ForbiddenException('Only admins can set cover image');
+    }
+
+    // Validar que la URL sea de una imagen
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const urlLower = url.toLowerCase();
+    const hasValidExtension = imageExtensions.some(ext => urlLower.includes(ext));
+    
+    if (!hasValidExtension && !urlLower.includes('image')) {
+      throw new BadRequestException('La URL debe apuntar a una imagen válida');
+    }
+
+    // Desactivar otras portadas
+    await this.mediaModel.updateMany(
+      { type: 'cover' },
+      { $set: { active: false } },
+    );
+
+    // Crear nueva entrada de media con la URL
+    const media = new this.mediaModel({
+      url: url,
+      fileName: `cover_${Date.now()}`,
+      type: 'cover',
+      mimeType: 'image/jpeg', // Asumimos JPEG por defecto para URLs externas
+      active: true,
+    });
+
     return media.save();
   }
 

@@ -15,6 +15,7 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { MediaService } from './media.service';
 import { UploadDto } from './dtos/upload.dto';
+import { SetCoverDto } from './dtos/set-cover.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Media } from './schemas/media.schema';
@@ -115,12 +116,86 @@ export class MediaController {
     return this.mediaService.listImages({});
   }
 
-  @ApiOperation({ summary: 'Marcar como portada', description: 'Marca una imagen como portada.' })
+  @ApiOperation({ summary: 'Marcar como portada', description: 'Marca una imagen existente como portada.' })
   @ApiParam({ name: 'id', description: 'ID de imagen' })
   @Roles('admin')
   @Post(':id/set-cover')
   async setCoverImage(@Param('id') id: string, @Request() req): Promise<Media> {
     return this.mediaService.setCoverImage(id, req.user);
+  }
+
+  @ApiOperation({ 
+    summary: 'Configurar imagen de portada', 
+    description: 'Configura una imagen de portada subiendo un archivo o proporcionando una URL. Solo se requiere uno de los dos.' 
+  })
+  @ApiBody({ 
+    schema: { 
+      type: 'object', 
+      properties: { 
+        url: { 
+          type: 'string', 
+          format: 'uri', 
+          description: 'URL de la imagen de portada (opcional si se proporciona archivo)',
+          example: 'https://example.com/cover-image.jpg'
+        },
+        file: { 
+          type: 'string', 
+          format: 'binary', 
+          description: 'Archivo de imagen de portada (opcional si se proporciona URL)'
+        }
+      }
+    } 
+  })
+  @ApiConsumes('multipart/form-data')
+  @Roles('admin')
+  @Post('set-cover')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (req, file, cb) => {
+          const randomName = Array(32)
+            .fill(null)
+            .map(() => Math.round(Math.random() * 16).toString(16))
+            .join('');
+          return cb(null, `cover_${randomName}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}. Solo se permiten JPEG, PNG, GIF y WebP.`), false);
+        }
+      },
+      limits: {
+        fileSize: 25 * 1024 * 1024, // 25MB
+      },
+    }),
+  )
+  async setCover(
+    @Body() setCoverDto: SetCoverDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req,
+  ): Promise<Media> {
+    // Validar que se proporcione al menos uno de los dos
+    if (!setCoverDto.url && !file) {
+      throw new BadRequestException('Debe proporcionar una URL o subir un archivo');
+    }
+
+    // Si se proporciona URL, usar el método de URL
+    if (setCoverDto.url) {
+      return this.mediaService.setCoverImageFromUrl(setCoverDto.url, req.user);
+    }
+
+    // Si se proporciona archivo, subirlo primero y luego configurarlo como portada
+    if (file) {
+      const uploadedMedia = await this.mediaService.uploadFile(file, { type: 'cover' }, req.user);
+      return this.mediaService.setCoverImage((uploadedMedia as any)._id.toString(), req.user);
+    }
+
+    // Este punto nunca se debería alcanzar debido a la validación anterior
+    throw new BadRequestException('Error inesperado al procesar la imagen de portada');
   }
 
   @ApiOperation({ summary: 'Ver portada activa', description: 'Obtiene la portada activa.' })
