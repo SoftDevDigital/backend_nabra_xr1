@@ -26,7 +26,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiTags } 
 export class MediaController {
   constructor(private mediaService: MediaService) {}
 
-  @ApiOperation({ summary: 'Subir imagen', description: 'Recibe una imagen como archivo y la guarda en el servidor.' })
+  @ApiOperation({ summary: 'Subir imagen', description: 'Recibe una imagen como archivo y la guarda en el servidor. Límite máximo: 25MB.' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ 
     schema: { 
@@ -66,7 +66,7 @@ export class MediaController {
         }
       },
       limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB
+        fileSize: 25 * 1024 * 1024, // 25MB
       },
     }),
   )
