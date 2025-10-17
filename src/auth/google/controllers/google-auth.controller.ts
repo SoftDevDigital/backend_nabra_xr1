@@ -140,8 +140,9 @@ export class GoogleAuthController {
         path: '/',
       });
 
-      // Redirigir al frontend con solo un indicador de éxito
-      const redirectUrl = `${googleAuthConfig.successRedirect}?login=success`;
+      // Redirigir al frontend con token en URL + cookie segura
+      // Token en URL para que frontend pueda leerlo y guardarlo en localStorage
+      const redirectUrl = `${googleAuthConfig.successRedirect}?login=success&access_token=${accessToken}`;
 
       // 🔍 LOG FINAL: URL de redirección
       console.log(`\n========== REDIRECCIÓN FINAL ==========`);

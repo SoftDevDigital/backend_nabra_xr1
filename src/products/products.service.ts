@@ -158,13 +158,13 @@ export class ProductsService {
       }
     }
 
-    // Preparar datos del producto
+    // Preparar datos del producto (formato esperado: sizes como CSV, stockBySizes como "35:10,36:20")
     const sizes = createProductDto.sizes ? createProductDto.sizes.split(',').map(s => s.trim()) : [];
-    
+
     // Crear stockBySize a partir de los talles y stock individual por talle
     let stockBySize: { [size: string]: number } = {};
     if (createProductDto.stockBySize) {
-      // Si viene stockBySize directamente
+      // Si viene stockBySize directamente (objeto)
       stockBySize = createProductDto.stockBySize;
     } else {
       // Si viene stock individual por talle en el formato: "35:10,36:20,37:15"
