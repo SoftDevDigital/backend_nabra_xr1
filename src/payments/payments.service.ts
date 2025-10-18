@@ -958,21 +958,9 @@ export class PaymentsService {
 
           this.logger.log(`✅ Order creation + cart cleanup completed successfully`);
 
-          // Enviar email de confirmación
-          if (customerEmail && customerName) {
-            console.log(`📧 [WEBHOOK] Enviando email de confirmación a: ${customerEmail}`);
-            try {
-              await this.ordersService['orderNotificationService'].sendOrderConfirmationEmail(
-                order, 
-                customerEmail, 
-                customerName
-              );
-              console.log(`✅ [WEBHOOK] Email de confirmación enviado exitosamente`);
-            } catch (emailError) {
-              console.log(`❌ [WEBHOOK] Error enviando email (no afecta la orden):`, emailError);
-              this.logger.error(`Failed to send order confirmation email:`, emailError);
-            }
-          }
+          // NOTA: No enviamos email aquí porque OrdersService.createOrderFromPayment 
+          // ya lo hace automáticamente usando OrderNotificationService (emails reales)
+          // Esto evita el envío duplicado de emails de confirmación
 
         } catch (error) {
           this.logger.error(`❌ Order creation + cart cleanup failed:`, error);
