@@ -61,7 +61,7 @@ export class MercadoPagoService {
         back_urls: backUrls,
         notification_url: notificationUrl,
         external_reference: externalReference,
-        // Nota: Omitimos auto_return para evitar validación estricta de back_urls.success en entornos locales
+        auto_return: params.autoReturn || 'approved',
         binary_mode: (process.env.MP_BINARY_MODE || 'true').toLowerCase() === 'true',
         metadata: { env: process.env.NODE_ENV || 'development' },
       },
