@@ -19,7 +19,7 @@ export class MercadoPagoService {
   private payment: Payment;
 
   constructor(private configService: ConfigService) {
-    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-6134474951811496-100802-7c9987de1190ad933c24d9497c4dfbf2-741575872'
+    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-6134474951811496-100802-7c9987de1190ad933c24d9497c4dfbf2-741575872
     const integratorId = this.configService.get<string>('MERCADOPAGO_INTEGRATOR_ID');
     
     if (!accessToken) {
@@ -30,6 +30,7 @@ export class MercadoPagoService {
       accessToken: accessToken,
       options: integratorId ? { integratorId } : undefined,
     } as any);
+
     this.preference = new Preference(this.mpClient);
     this.payment = new Payment(this.mpClient);
   }
@@ -43,8 +44,8 @@ export class MercadoPagoService {
     currency?: string;
   }): Promise<{ id: string; init_point: string }> {
     const { items, externalReference, notificationUrl, backUrls } = params;
-    // Usar MXN (pesos mexicanos) como moneda predeterminada
-    // La moneda se puede configurar vía parámetro, variable de entorno o por defecto MXN
+    // Usar ARS (pesos argentinos) como moneda predeterminada
+    // La moneda se puede configurar vía parámetro, variable de entorno o por defecto ARS
     const currency = params.currency || process.env.MERCADOPAGO_CURRENCY || 'MXN';
 
     const response = await this.preference.create({

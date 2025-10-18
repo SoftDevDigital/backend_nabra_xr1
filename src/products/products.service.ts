@@ -261,6 +261,15 @@ export class ProductsService {
       };
     }
 
+    // Si no hay stockBySize configurado, permitir la compra (compatibilidad con productos antiguos)
+    if (!product.stockBySize || Object.keys(product.stockBySize).length === 0) {
+      return {
+        available: true,
+        currentStock: 999, // Valor simbólico para productos sin stock configurado
+        message: 'Stock not configured - allowing purchase'
+      };
+    }
+
     if (!size) {
       // Si no se especifica talle, verificar stock total
       const totalStock = Object.values(product.stockBySize || {}).reduce((sum, stock) => sum + stock, 0);

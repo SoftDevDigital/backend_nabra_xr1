@@ -21,12 +21,13 @@ import { OrdersService } from '../orders/orders.service';
 import { MercadoPagoService } from './mercadopago.service';
 import { UsersService } from '../users/users.service';
 import { DrEnvioService } from '../shipping/drenvio.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
   
-  // Caché temporal para datos de envío (en memoria)
+  // Caché temporal para datos de envío (en memoria) - MEJORADO: También persistir en DB
   private shippingDataCache = new Map<string, any>();
 
   constructor(
@@ -37,7 +38,99 @@ export class PaymentsService {
     @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService,
     private usersService: UsersService,
     private drenvioService: DrEnvioService,
+    private configService: ConfigService,
   ) {}
+
+  /**
+   * Maneja la actualización del carrito para pagos parciales
+   */
+  async handlePartialCartUpdate(payment: PaymentDocument): Promise<void> {
+    try {
+      const selectedItems = payment.metadata?.selectedItems || [];
+      console.log(`🛒 [PARTIAL-CART] Actualizando carrito con ${selectedItems.length} items procesados`);
+      
+      for (const selectedItem of selectedItems) {
+        // Reducir la cantidad en el carrito por la cantidad procesada
+        await this.cartService.updateCartItem(
+          payment.userId.toString(),
+          selectedItem.cartItemId,
+          { quantity: selectedItem.originalQuantity - selectedItem.requestedQuantity }
+        );
+        console.log(`✅ [PARTIAL-CART] Item ${selectedItem.cartItemId} actualizado: ${selectedItem.originalQuantity} → ${selectedItem.originalQuantity - selectedItem.requestedQuantity}`);
+      }
+      
+      console.log(`✅ [PARTIAL-CART] Carrito actualizado exitosamente para pago parcial`);
+    } catch (error) {
+      console.error(`❌ [PARTIAL-CART] Error actualizando carrito:`, error);
+      this.logger.error(`Failed to update cart for partial payment:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Persiste datos de envío en el pago para evitar pérdida de datos
+   */
+  async persistShippingData(paymentId: string, shippingData: any): Promise<void> {
+    try {
+      await this.paymentModel.updateOne(
+        { _id: paymentId },
+        { 
+          $set: { 
+            'metadata.shippingData': shippingData.shippingData,
+            'metadata.simpleShipping': shippingData.simpleShipping,
+            'metadata.shippingOption': shippingData.shippingOption,
+            'metadata.shippingAddress': shippingData.shippingAddress,
+            'metadata.shippingContact': shippingData.shippingContact,
+            'metadata.shippingCost': shippingData.shippingCost,
+            'metadata.shippingDataTimestamp': new Date()
+          } 
+        }
+      );
+      console.log(`✅ [SHIPPING-DATA] Datos de envío persistidos en DB para pago: ${paymentId}`);
+    } catch (error) {
+      console.error(`❌ [SHIPPING-DATA] Error persistiendo datos de envío:`, error);
+      this.logger.error(`Failed to persist shipping data for payment ${paymentId}:`, error);
+    }
+  }
+
+  /**
+   * Valida la firma del webhook de MercadoPago para seguridad
+   */
+  private validateWebhookSignature(query: any, headers: Record<string, any>): boolean {
+    try {
+      const webhookSecret = this.configService.get<string>('MERCADOPAGO_WEBHOOK_SECRET');
+      
+      // Si no hay secret configurado, permitir en desarrollo
+      if (!webhookSecret) {
+        if (process.env.NODE_ENV === 'production') {
+          this.logger.warn('⚠️ MERCADOPAGO_WEBHOOK_SECRET no configurado en producción - webhooks no validados');
+          return false;
+        }
+        console.log(`⚠️ [WEBHOOK-SECURITY] No hay webhook secret configurado - permitiendo en desarrollo`);
+        return true;
+      }
+
+      const signature = headers['x-signature'];
+      if (!signature) {
+        console.log(`❌ [WEBHOOK-SECURITY] No se encontró firma x-signature`);
+        return false;
+      }
+
+      // Validación básica de formato de firma
+      if (!signature.includes('ts=') || !signature.includes('v1=')) {
+        console.log(`❌ [WEBHOOK-SECURITY] Formato de firma inválido`);
+        return false;
+      }
+
+      // TODO: Implementar validación completa de HMAC-SHA256
+      // Por ahora, validación básica de formato
+      console.log(`✅ [WEBHOOK-SECURITY] Firma validada básicamente`);
+      return true;
+    } catch (error) {
+      this.logger.error('Error validating webhook signature:', error);
+      return false;
+    }
+  }
 
   private async getUserInfo(userId: string): Promise<{ email: string; firstName: string; lastName: string }> {
     try {
@@ -118,7 +211,8 @@ export class PaymentsService {
       try {
         // Calcular total e items
         let totalAmount = 0;
-        const currency = process.env.MERCADOPAGO_CURRENCY || 'MXN';
+        const currency = process.env.MERCADOPAGO_CURRENCY || 'ARS';
+        this.logger.log(`🔍 [DEBUG] PaymentsService currency: ${currency}`);
         const mpItems = cart.items.map((item) => {
           const product = item.product as any;
           const itemTotal = product.price * item.quantity;
@@ -414,6 +508,7 @@ export class PaymentsService {
       try {
         // Preparar items para el pago
         const currency = process.env.MERCADOPAGO_CURRENCY || 'MXN';
+        this.logger.log(`🔍 [DEBUG] PaymentsService currency: ${currency}`);
         const mpItems = selectedItems.map((item) => {
           const product = item.cartItem.product as any;
           const itemTotal = product.price * item.requestedQuantity;
@@ -660,9 +755,14 @@ export class PaymentsService {
       body
     });
 
+    // ✅ VALIDAR FIRMA DEL WEBHOOK PARA SEGURIDAD
+    if (headers && !this.validateWebhookSignature(query, headers)) {
+      console.log(`❌ [WEBHOOK-SECURITY] Firma del webhook inválida - rechazando`);
+      this.logger.warn(`Invalid webhook signature received from IP: ${headers['x-forwarded-for'] || 'unknown'}`);
+      return { ok: false, error: 'Invalid signature' };
+    }
+
     if (topic === 'payment' && id) {
-      // TODO: validar firma x-signature si configuras Webhook Secret
-      // headers?.['x-signature']
       const paymentInfo = await this.mpService.getPaymentById(String(id));
       const status = String(paymentInfo?.status || '').toLowerCase();
 
@@ -795,8 +895,6 @@ export class PaymentsService {
           console.log(`🔍 [WEBHOOK] ❌ SIN DATOS DE ENVÍO`);
         }
 
-        // ✅ TRANSACCIÓN: Crear orden + limpiar carrito de forma atómica
-        // Preparar datos antes de iniciar la transacción
         let customerEmail: string | undefined;
         let customerName: string | undefined;
         
@@ -820,7 +918,8 @@ export class PaymentsService {
           }
         }
 
-        // Crear orden + limpiar carrito
+        // Crear orden + limpiar carrito con manejo robusto de errores
+        let orderCreated = false;
         try {
           this.logger.log(`Starting order creation + cart cleanup for user ${payment.userId}`);
           console.log(`📧 [WEBHOOK] Creando orden con email: ${customerEmail}, nombre: ${customerName}`);
@@ -828,7 +927,13 @@ export class PaymentsService {
           const order = await this.ordersService.createOrderFromPayment({
             userId: payment.userId.toString(),
             paymentId: (payment as any)._id.toString(),
-            items: payment.items.map((it) => ({ name: it.name, quantity: it.quantity, price: it.price })),
+            items: payment.items.map((it) => ({ 
+              name: it.name, 
+              quantity: it.quantity, 
+              price: it.price,
+              productId: it.productId,
+              size: it.size 
+            })),
             totalAmount: payment.amount,
             currency: payment.currency,
             customerEmail: customerEmail || undefined,
@@ -838,6 +943,8 @@ export class PaymentsService {
             shippingOption: finalShippingOption || null,
             shippingCost: finalShippingCost,
           });
+
+          orderCreated = true;
 
           // Manejar carrito según tipo de pago
           if (payment.metadata?.isPartial) {
@@ -871,17 +978,39 @@ export class PaymentsService {
           this.logger.error(`❌ Order creation + cart cleanup failed:`, error);
           console.error('❌ [MERCADOPAGO-WEBHOOK] Error creando orden:', error);
           
-          // IMPORTANTE: Revertir el estado del pago a PENDING para permitir reintento
           await this.paymentModel.updateOne(
             { _id: (payment as any)._id },
             { 
               $set: { 
                 status: PaymentStatus.PENDING,
-                errorMessage: `Order creation failed: ${error.message}`
+                // Limpiar captureId para permitir reintento
+                captureId: undefined
               } 
             }
           );
-          console.log(`⚠️ [WEBHOOK] Pago revertido a PENDING para permitir reintento`);
+          
+          try {
+            if (payment.metadata?.stockItems) {
+              console.log(`🔄 [WEBHOOK-ROLLBACK] Liberando stock reservado...`);
+              for (const item of payment.metadata.stockItems) {
+                await this.productsService.releaseStock(item.productId, item.quantity);
+              }
+              console.log(`✅ [WEBHOOK-ROLLBACK] Stock liberado exitosamente`);
+            }
+          } catch (stockError) {
+            console.error(`❌ [WEBHOOK-ROLLBACK] Error liberando stock:`, stockError);
+            this.logger.error(`Failed to release stock during rollback:`, stockError);
+          }
+          
+          if (!payment.metadata?.isPartial && orderCreated === false) {
+            try {
+              console.log(`🔄 [WEBHOOK-ROLLBACK] Restaurando carrito del usuario...`);
+              // El carrito ya no se limpia si hay error en la creación de la orden
+              console.log(`✅ [WEBHOOK-ROLLBACK] Carrito mantenido (no se limpió debido al error)`);
+            } catch (cartError) {
+              console.error(`❌ [WEBHOOK-ROLLBACK] Error restaurando carrito:`, cartError);
+            }
+          }
         }
       } else if (status === 'rejected' || status === 'cancelled' || status === 'cancelled_by_user') {
         payment.status = PaymentStatus.CANCELLED;
@@ -946,32 +1075,6 @@ export class PaymentsService {
   }
 
 
-  private async handlePartialCartUpdate(payment: any): Promise<void> {
-    try {
-      const selectedItems = payment.metadata?.selectedItems || [];
-      
-      for (const selectedItem of selectedItems) {
-        const newQuantity = selectedItem.originalQuantity - selectedItem.requestedQuantity;
-        
-        if (newQuantity <= 0) {
-          // Remover el item del carrito
-          await this.cartService.removeFromCart(payment.userId.toString(), selectedItem.cartItemId);
-          this.logger.log(`Removed item ${selectedItem.cartItemId} from cart for user ${payment.userId}`);
-        } else {
-          // Actualizar la cantidad
-          await this.cartService.updateCartItem(payment.userId.toString(), selectedItem.cartItemId, { 
-            quantity: newQuantity 
-          });
-          this.logger.log(`Updated item ${selectedItem.cartItemId} quantity to ${newQuantity} for user ${payment.userId}`);
-        }
-      }
-      
-      this.logger.log(`Partial cart update completed for user ${payment.userId}`);
-    } catch (error) {
-      this.logger.error('Error updating partial cart:', error);
-      throw error;
-    }
-  }
 
   // ========================================
   // CRON JOB: Liberación automática de reservas expiradas

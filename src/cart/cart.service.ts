@@ -73,13 +73,15 @@ export class CartService {
       throw new BadRequestException('Maximum quantity per item is 99');
     }
 
-    // Validar talla si el producto la requiere
-    if (productWithPromotions.sizes && productWithPromotions.sizes.length > 0 && !addToCartDto.size) {
-      throw new BadRequestException('Size is required for this product');
-    }
-
-    if (addToCartDto.size && productWithPromotions.sizes && !productWithPromotions.sizes.includes(addToCartDto.size)) {
-      throw new BadRequestException(`Size ${addToCartDto.size} is not available for this product`);
+    // Validar talla si el producto la requiere Y tiene stockBySize configurado
+    if (productWithPromotions.sizes && productWithPromotions.sizes.length > 0 && productWithPromotions.stockBySize && Object.keys(productWithPromotions.stockBySize).length > 0) {
+      if (!addToCartDto.size) {
+        throw new BadRequestException('Size is required for this product');
+      }
+      
+      if (!productWithPromotions.sizes.includes(addToCartDto.size)) {
+        throw new BadRequestException(`Size ${addToCartDto.size} is not available for this product`);
+      }
     }
 
     const cart = await this.getCartInternal(userId);

@@ -81,17 +81,41 @@ export class OrderNotificationService {
       // Generar HTML del email
       const htmlContent = this.template(templateData);
 
-      // Enviar email
+      // Enviar email con retry logic
       console.log(`📧 [EMAIL] Ejecutando envío real de email a: ${customerEmail} con asunto: Confirmación de Pedido #${order.orderNumber} - Nabra`);
-      await this.mailService.sendMail({
-        to: customerEmail,
-        subject: `Confirmación de Pedido #${order.orderNumber} - Nabra`,
-        html: htmlContent,
-        text: this.generateTextVersion(templateData)
-      });
-
-      console.log(`✅ [EMAIL] Email enviado exitosamente a: ${customerEmail} para orden ${order.orderNumber}`);
-      this.logger.log(`Order confirmation email sent successfully for order ${order.orderNumber}`);
+      
+      let emailSent = false;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (!emailSent && retryCount < maxRetries) {
+        try {
+          await this.mailService.sendMail({
+            to: customerEmail,
+            subject: `Confirmación de Pedido #${order.orderNumber} - Nabra`,
+            html: htmlContent,
+            text: this.generateTextVersion(templateData)
+          });
+          
+          emailSent = true;
+          console.log(`✅ [EMAIL] Email enviado exitosamente a: ${customerEmail} para orden ${order.orderNumber} (intento ${retryCount + 1})`);
+          this.logger.log(`Order confirmation email sent successfully for order ${order.orderNumber}`);
+        } catch (emailError) {
+          retryCount++;
+          console.log(`❌ [EMAIL] Error en intento ${retryCount}/${maxRetries} enviando email a: ${customerEmail}`, emailError);
+          
+          if (retryCount < maxRetries) {
+            // Esperar antes del siguiente intento (backoff exponencial)
+            const delay = Math.pow(2, retryCount) * 1000; // 2s, 4s, 8s
+            console.log(`⏳ [EMAIL] Esperando ${delay}ms antes del siguiente intento...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            console.log(`❌ [EMAIL] Falló definitivamente el envío de email después de ${maxRetries} intentos`);
+            this.logger.error(`Failed to send order confirmation email after ${maxRetries} attempts:`, emailError);
+            // No lanzamos el error para no afectar la creación de la orden
+          }
+        }
+      }
     } catch (error) {
       this.logger.error(`Failed to send order confirmation email for order ${order.orderNumber}:`, error);
       throw error;
