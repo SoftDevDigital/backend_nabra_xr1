@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dtos/create-product.dto';
+import { CreateProductMultipartDto } from './dtos/create-product-multipart.dto';
 import { UpdateProductDto } from './dtos/update-product.dto';
 import { CategoryResponseDto, CategoryProductsResponseDto, CategoryStatsResponseDto } from './dtos/category-response.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -180,7 +181,7 @@ export class ProductsController {
     }),
   )
   async create(
-    @Body() createProductDto: any,
+    @Body() createProductDto: CreateProductMultipartDto,
     @UploadedFiles() images: Express.Multer.File[],
     @Request() req,
   ): Promise<Product> {

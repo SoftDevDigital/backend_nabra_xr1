@@ -158,8 +158,8 @@ export class ProductsService {
       }
     }
 
-    // Preparar datos del producto (formato esperado: sizes como CSV, stockBySizes como "35:10,36:20")
-    const sizes = createProductDto.sizes ? createProductDto.sizes.split(',').map(s => s.trim()) : [];
+    // Preparar datos del producto (sizes ya viene como array desde el DTO)
+    const sizes = createProductDto.sizes || [];
 
     // Crear stockBySize a partir de los talles y stock individual por talle
     let stockBySize: { [size: string]: number } = {};
@@ -193,8 +193,8 @@ export class ProductsService {
       sizes,
       stockBySize,
       images: imageUrls,
-      isPreorder: createProductDto.isPreorder === 'true',
-      isFeatured: createProductDto.isFeatured === 'true',
+      isPreorder: createProductDto.isPreorder || false,
+      isFeatured: createProductDto.isFeatured || false,
     };
 
     const product = new this.productModel(productData);
