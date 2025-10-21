@@ -188,7 +188,7 @@ export class ProductsService {
     const productData = {
       name: createProductDto.name,
       description: createProductDto.description,
-      price: parseFloat(createProductDto.price),
+      price: createProductDto.price, // Ya viene convertido a number desde el DTO
       category: createProductDto.category,
       sizes,
       stockBySize,
