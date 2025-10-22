@@ -61,13 +61,29 @@ export class SimplePromotionsService {
         throw new BadRequestException('La fecha de fin debe ser futura');
       }
 
-      const promotion = new this.promotionModel({
-        ...createPromotionDto,
+      // Crear promoción sin campos que causen problemas de índice
+      const promotionData = {
+        name: createPromotionDto.name,
+        description: createPromotionDto.description,
+        type: createPromotionDto.type,
+        target: createPromotionDto.target,
         startDate,
         endDate,
+        discountPercentage: createPromotionDto.discountPercentage,
+        discountAmount: createPromotionDto.discountAmount,
+        buyQuantity: createPromotionDto.buyQuantity,
+        getQuantity: createPromotionDto.getQuantity,
+        specificProducts: createPromotionDto.specificProducts,
+        category: createPromotionDto.category,
+        minimumPurchaseAmount: createPromotionDto.minimumPurchaseAmount,
+        minimumQuantity: createPromotionDto.minimumQuantity,
+        isActive: createPromotionDto.isActive ?? true,
+        isAutomatic: createPromotionDto.isAutomatic ?? true,
         createdBy: adminId,
         status: PromotionStatus.ACTIVE,
-      });
+      };
+
+      const promotion = new this.promotionModel(promotionData);
 
       await promotion.save();
       this.logger.log(`Promoción creada: ${promotion._id}`);
