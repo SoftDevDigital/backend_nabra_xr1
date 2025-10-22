@@ -9,6 +9,7 @@ import {
   UploadedFile,
   Request,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -201,8 +202,19 @@ export class MediaController {
   @ApiOperation({ summary: 'Ver portada activa', description: 'Obtiene la portada activa.' })
   @Public()
   @Get('cover/active')
-  async getActiveCover() {
-    return this.mediaService.getActiveCoverUrl();
+  async getActiveCover(@Res() res) {
+    const result = await this.mediaService.getActiveCoverUrl();
+    
+    // 🚀 FIX: Agregar headers para evitar caché agresivo
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'Last-Modified': new Date().toUTCString(),
+      'ETag': `"${Date.now()}"`
+    });
+    
+    return res.json(result);
   }
 
   @ApiOperation({ summary: 'Galería de productos', description: 'Lista todas las imágenes de productos disponibles.' })

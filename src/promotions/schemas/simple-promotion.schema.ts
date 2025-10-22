@@ -96,9 +96,6 @@ export class SimplePromotion extends Document {
   // Auditoría
   @Prop({ type: Types.ObjectId, ref: 'User' })
   createdBy?: User;
-
-  @Prop()
-  lastModifiedBy?: User;
 }
 
 export const SimplePromotionSchema = SchemaFactory.createForClass(SimplePromotion);
