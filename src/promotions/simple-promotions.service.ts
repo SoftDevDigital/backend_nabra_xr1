@@ -80,6 +80,7 @@ export class SimplePromotionsService {
         isActive: createPromotionDto.isActive ?? true,
         isAutomatic: createPromotionDto.isAutomatic ?? true,
         createdBy: adminId,
+        lastModifiedBy: adminId, // Agregar este campo para evitar el error de índice único
         status: PromotionStatus.ACTIVE,
       };
 
