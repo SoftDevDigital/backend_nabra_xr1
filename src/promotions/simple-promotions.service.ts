@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { SimplePromotion } from './schemas/simple-promotion.schema';
 import { SimpleCoupon } from './schemas/simple-coupon.schema';
 import { CreateSimplePromotionDto } from './dtos/simple-promotion.dto';
@@ -144,5 +145,43 @@ export class SimplePromotionsService {
       page: parseInt(page),
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  // ===== AUTO-ELIMINACIÓN DE PROMOCIONES EXPIRADAS =====
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async cleanupExpiredPromotions(): Promise<void> {
+    try {
+      this.logger.log('Iniciando limpieza de promociones expiradas...');
+      
+      const now = new Date();
+      const result = await this.promotionModel.deleteMany({
+        endDate: { $lt: now },
+        status: { $ne: PromotionStatus.EXPIRED }
+      });
+
+      this.logger.log(`Limpieza completada. Eliminadas ${result.deletedCount} promociones expiradas.`);
+    } catch (error) {
+      this.logger.error('Error en limpieza de promociones expiradas:', error);
+    }
+  }
+
+  // Método manual para limpiar promociones expiradas (opcional)
+  async manualCleanupExpiredPromotions(): Promise<{ deletedCount: number; message: string }> {
+    try {
+      const now = new Date();
+      const result = await this.promotionModel.deleteMany({
+        endDate: { $lt: now },
+        status: { $ne: PromotionStatus.EXPIRED }
+      });
+
+      return {
+        deletedCount: result.deletedCount,
+        message: `Se eliminaron ${result.deletedCount} promociones expiradas`
+      };
+    } catch (error) {
+      this.logger.error('Error en limpieza manual:', error);
+      throw error;
+    }
   }
 }

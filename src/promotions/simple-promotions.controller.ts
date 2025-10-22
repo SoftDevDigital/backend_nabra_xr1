@@ -204,6 +204,23 @@ export class SimplePromotionsController {
     }
   }
 
+  @ApiOperation({ summary: 'Limpiar promociones expiradas (Admin)', description: 'Elimina manualmente todas las promociones expiradas' })
+  @ApiResponse({ status: 200, description: 'Promociones expiradas eliminadas' })
+  @Roles('admin')
+  @UseGuards(RolesGuard)
+  @Delete('admin/cleanup-expired')
+  async cleanupExpiredPromotions() {
+    try {
+      return await this.simplePromotionsService.manualCleanupExpiredPromotions();
+    } catch (error) {
+      throw new BadRequestException({
+        message: 'Error al limpiar promociones expiradas',
+        error: error.message,
+        statusCode: 400
+      });
+    }
+  }
+
   // ===== MÉTODO DE TRANSFORMACIÓN =====
 
   private transformToInternalFormat(dto: CreateProductPromotionDto): any {
