@@ -17,7 +17,7 @@ import { ProductsModule } from '../products/products.module';
   imports: [
     ScheduleModule.forRoot(),
     MongooseModule.forFeature([
-      { name: SimplePromotion.name, schema: SimplePromotionSchema },
+      { name: SimplePromotion.name, schema: SimplePromotionSchema, collection: 'productpromotions' },
       { name: SimpleCoupon.name, schema: SimpleCouponSchema },
     ]),
     forwardRef(() => ProductsModule),
