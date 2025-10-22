@@ -146,7 +146,7 @@ export class SimplePromotionsController {
   })
   @Roles('admin')
   @UseGuards(RolesGuard)
-  @Post('create')
+  @Post('admin/create')
   async createPromotion(@Request() req, @Body() createPromotionDto: CreateProductPromotionDto) {
     if (!req.user || !req.user.userId) {
       throw new BadRequestException({
