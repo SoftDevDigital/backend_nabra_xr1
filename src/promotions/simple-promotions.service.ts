@@ -61,19 +61,13 @@ export class SimplePromotionsService {
         throw new BadRequestException('La fecha de fin debe ser futura');
       }
 
-      // Crear la promoción sin campos problemáticos
-      const promotionData = {
+      const promotion = new this.promotionModel({
         ...createPromotionDto,
         startDate,
         endDate,
         createdBy: adminId,
         status: PromotionStatus.ACTIVE,
-      };
-
-      // Eliminar campos que pueden causar problemas de índice
-      delete promotionData.lastModifiedBy;
-
-      const promotion = new this.promotionModel(promotionData);
+      });
 
       await promotion.save();
       this.logger.log(`Promoción creada: ${promotion._id}`);
@@ -109,7 +103,7 @@ export class SimplePromotionsService {
       }
 
       Object.assign(promotion, updateData);
-      promotion.lastModifiedBy = adminId as any;
+      // lastModifiedBy eliminado del esquema
 
       await promotion.save();
       this.logger.log(`Promoción actualizada: ${promotionId}`);
