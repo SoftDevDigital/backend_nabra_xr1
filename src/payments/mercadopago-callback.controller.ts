@@ -121,6 +121,7 @@ export class MercadoPagoCallbackController {
     }
   }
 
+
   /**
    * Callback de éxito de MercadoPago
    * MercadoPago redirige aquí después de que el usuario aprueba el pago

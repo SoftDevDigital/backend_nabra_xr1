@@ -38,21 +38,75 @@ export class CartService {
     return this.getCartInternal(userId);
   }
 
-  // Método público - SIEMPRE incluye validación automática
+  // Método público - SIEMPRE incluye validación automática Y promociones en tiempo real
   async getCart(userId: string) {
     const cart = await this.getCartInternal(userId);
 
     // Validación automática de stock - SIEMPRE incluida
     const validation = await this.validateCartStock(userId);
     
-    // Retornar carrito con validación incluida automáticamente
+    // Obtener carrito con promociones actualizadas en tiempo real
+    const cartWithPromotions = await this.getCartSummaryWithDiscounts(userId);
+    
+    // Actualizar los items del carrito con precios reales (con promociones)
+    const updatedItems = cart.items.map((cartItem) => {
+      const productWithPromotion = cartWithPromotions.cartSummary.items.find(
+        item => item.productId.toString() === cartItem.product._id.toString()
+      );
+      
+      if (productWithPromotion) {
+        return {
+          ...cartItem.toObject(),
+          // Agregar información de promoción al item del carrito
+          originalPrice: productWithPromotion.originalPrice,
+          finalPrice: productWithPromotion.price,
+          hasPromotion: productWithPromotion.hasPromotion,
+          promotionName: productWithPromotion.promotionName,
+          discountAmount: productWithPromotion.originalPrice - productWithPromotion.price,
+          // Actualizar el precio del producto para reflejar la promoción
+          product: {
+            ...cartItem.product.toObject(),
+            price: productWithPromotion.price, // Precio con promoción
+            originalPrice: productWithPromotion.originalPrice,
+            hasPromotion: productWithPromotion.hasPromotion,
+            promotionName: productWithPromotion.promotionName
+          }
+        };
+      }
+      
+      // Si no hay promoción, mantener precio original
+      return {
+        ...cartItem.toObject(),
+        originalPrice: cartItem.product.price,
+        finalPrice: cartItem.product.price,
+        hasPromotion: false,
+        product: {
+          ...cartItem.product.toObject(),
+          originalPrice: cartItem.product.price,
+          hasPromotion: false
+        }
+      };
+    });
+    
+    // Retornar carrito con validación Y promociones incluidas automáticamente
     return {
       ...cart.toObject(),
+      items: updatedItems, // Items con precios actualizados
       stockValidation: {
         isValid: validation.isValid,
         errors: validation.errors,
         warnings: validation.warnings
-      }
+      },
+      // Información de promociones aplicadas
+      promotions: cartWithPromotions.discounts,
+      finalTotal: cartWithPromotions.finalTotal,
+      originalTotal: cartWithPromotions.cartSummary.originalTotal || cartWithPromotions.cartSummary.subtotal,
+      totalDiscount: cartWithPromotions.discounts.totalDiscount,
+      lastUpdated: cartWithPromotions.lastUpdated,
+      promotionsChecked: cartWithPromotions.promotionsChecked,
+      // Totales calculados
+      subtotal: cartWithPromotions.cartSummary.subtotal,
+      estimatedTotal: cartWithPromotions.cartSummary.estimatedTotal
     };
   }
 

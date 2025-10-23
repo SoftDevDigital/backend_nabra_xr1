@@ -181,7 +181,6 @@ export class PaymentsService {
       // Validar el stock del carrito antes de proceder
       await this.cartService.validateCartBeforeCheckout(userId);
 
-
       // Preparar items para reserva de stock
       const stockItems = cart.items.map(item => {
         let productId: string;

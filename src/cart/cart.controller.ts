@@ -27,46 +27,65 @@ export class CartController {
     @Inject(forwardRef(() => PaymentsService)) private paymentsService: PaymentsService,
   ) {}
 
-  @ApiOperation({ summary: 'Obtener carrito', description: 'Obtiene el carrito del usuario autenticado con items, totales y promociones aplicadas automáticamente.' })
+  @ApiOperation({ 
+    summary: 'Obtener carrito', 
+    description: 'Obtiene el carrito del usuario con promociones aplicadas automáticamente en tiempo real. Los precios mostrados ya incluyen descuentos si hay promociones activas.' 
+  })
   @ApiResponse({ 
     status: 200, 
-    description: 'Carrito con promociones aplicadas',
+    description: 'Carrito con promociones aplicadas automáticamente',
     schema: {
       type: 'object',
       properties: {
-        cartSummary: {
-          type: 'object',
-          properties: {
-            items: {
-              type: 'array',
-              items: {
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              _id: { type: 'string' },
+              product: {
                 type: 'object',
                 properties: {
-                  productId: { type: 'string' },
-                  productName: { type: 'string' },
-                  price: { type: 'number', description: 'Precio final con promoción' },
+                  _id: { type: 'string' },
+                  name: { type: 'string' },
+                  price: { type: 'number', description: 'Precio final con promoción aplicada' },
                   originalPrice: { type: 'number', description: 'Precio original sin promoción' },
                   hasPromotion: { type: 'boolean' },
-                  promotionName: { type: 'string' },
-                  quantity: { type: 'number' }
+                  promotionName: { type: 'string' }
                 }
-              }
-            },
-            subtotal: { type: 'number' },
-            estimatedTotal: { type: 'number' },
-            originalTotal: { type: 'number', description: 'Total sin promociones' }
+              },
+              quantity: { type: 'number' },
+              size: { type: 'string' },
+              originalPrice: { type: 'number', description: 'Precio original del item' },
+              finalPrice: { type: 'number', description: 'Precio final con promoción' },
+              hasPromotion: { type: 'boolean' },
+              promotionName: { type: 'string' },
+              discountAmount: { type: 'number', description: 'Descuento aplicado al item' }
+            }
           }
         },
-        discounts: {
+        subtotal: { type: 'number', description: 'Subtotal con promociones aplicadas' },
+        estimatedTotal: { type: 'number', description: 'Total estimado con promociones' },
+        finalTotal: { type: 'number', description: 'Total final con promociones aplicadas' },
+        originalTotal: { type: 'number', description: 'Total original sin promociones' },
+        totalDiscount: { type: 'number', description: 'Descuento total aplicado' },
+        promotions: {
           type: 'object',
           properties: {
             appliedPromotions: { type: 'array' },
             totalDiscount: { type: 'number' }
           }
         },
-        finalTotal: { type: 'number' },
         lastUpdated: { type: 'string', format: 'date-time' },
-        promotionsChecked: { type: 'number', description: 'Número de productos con promociones' }
+        promotionsChecked: { type: 'number', description: 'Número de productos con promociones' },
+        stockValidation: {
+          type: 'object',
+          properties: {
+            isValid: { type: 'boolean' },
+            errors: { type: 'array' },
+            warnings: { type: 'array' }
+          }
+        }
       }
     }
   })
@@ -204,6 +223,65 @@ export class CartController {
     @Query('couponCode') couponCode?: string,
   ) {
     return this.cartService.getCartSummaryWithDiscounts(req.user.userId, couponCode);
+  }
+
+  @ApiOperation({ 
+    summary: 'Vista previa del checkout', 
+    description: 'Obtiene el carrito con precios finales para checkout. Incluye promociones aplicadas y totales reales.' 
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Carrito listo para checkout con precios finales',
+    schema: {
+      type: 'object',
+      properties: {
+        cartSummary: {
+          type: 'object',
+          properties: {
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  productId: { type: 'string' },
+                  productName: { type: 'string' },
+                  price: { type: 'number', description: 'Precio final con promoción' },
+                  originalPrice: { type: 'number', description: 'Precio original sin promoción' },
+                  hasPromotion: { type: 'boolean' },
+                  promotionName: { type: 'string' },
+                  quantity: { type: 'number' },
+                  total: { type: 'number', description: 'Total del item (precio * cantidad)' }
+                }
+              }
+            },
+            subtotal: { type: 'number' },
+            estimatedTotal: { type: 'number' },
+            originalTotal: { type: 'number', description: 'Total sin promociones' }
+          }
+        },
+        discounts: {
+          type: 'object',
+          properties: {
+            appliedPromotions: { type: 'array' },
+            totalDiscount: { type: 'number' }
+          }
+        },
+        finalTotal: { type: 'number', description: 'Total final a pagar' },
+        lastUpdated: { type: 'string', format: 'date-time' },
+        promotionsChecked: { type: 'number', description: 'Número de productos con promociones' },
+        checkoutReady: { type: 'boolean', description: 'Indica si el carrito está listo para checkout' }
+      }
+    }
+  })
+  @Get('checkout-preview')
+  async getCheckoutPreview(@Request() req) {
+    const cartWithPromotions = await this.cartService.getCartSummaryWithDiscounts(req.user.userId);
+    
+    return {
+      ...cartWithPromotions,
+      checkoutReady: true,
+      message: 'Carrito listo para checkout con precios actualizados'
+    };
   }
 
 }
