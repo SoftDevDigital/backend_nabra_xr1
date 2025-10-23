@@ -54,9 +54,14 @@ export class CartService {
         item => item.productId.toString() === cartItem.product._id.toString()
       );
       
+      // Obtener el producto poblado o usar el ObjectId
+      const product = cartItem.product as any;
+      
       if (productWithPromotion) {
         return {
-          ...cartItem.toObject(),
+          _id: cartItem._id,
+          quantity: cartItem.quantity,
+          size: cartItem.size,
           // Agregar información de promoción al item del carrito
           originalPrice: productWithPromotion.originalPrice,
           finalPrice: productWithPromotion.price,
@@ -65,25 +70,46 @@ export class CartService {
           discountAmount: productWithPromotion.originalPrice - productWithPromotion.price,
           // Actualizar el precio del producto para reflejar la promoción
           product: {
-            ...cartItem.product.toObject(),
+            _id: product._id,
+            name: product.name,
+            description: product.description,
             price: productWithPromotion.price, // Precio con promoción
             originalPrice: productWithPromotion.originalPrice,
             hasPromotion: productWithPromotion.hasPromotion,
-            promotionName: productWithPromotion.promotionName
+            promotionName: productWithPromotion.promotionName,
+            category: product.category,
+            sizes: product.sizes,
+            images: product.images,
+            stockBySize: product.stockBySize,
+            isPreorder: product.isPreorder,
+            isFeatured: product.isFeatured,
+            reviewStats: product.reviewStats
           }
         };
       }
       
       // Si no hay promoción, mantener precio original
       return {
-        ...cartItem.toObject(),
-        originalPrice: cartItem.product.price,
-        finalPrice: cartItem.product.price,
+        _id: cartItem._id,
+        quantity: cartItem.quantity,
+        size: cartItem.size,
+        originalPrice: product.price,
+        finalPrice: product.price,
         hasPromotion: false,
         product: {
-          ...cartItem.product.toObject(),
-          originalPrice: cartItem.product.price,
-          hasPromotion: false
+          _id: product._id,
+          name: product.name,
+          description: product.description,
+          price: product.price,
+          originalPrice: product.price,
+          hasPromotion: false,
+          category: product.category,
+          sizes: product.sizes,
+          images: product.images,
+          stockBySize: product.stockBySize,
+          isPreorder: product.isPreorder,
+          isFeatured: product.isFeatured,
+          reviewStats: product.reviewStats
         }
       };
     });
