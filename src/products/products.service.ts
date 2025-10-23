@@ -41,7 +41,11 @@ export class ProductsService {
       size
     } = query;
     
-    const skip = (page - 1) * limit;
+    // Asegurar que page sea al menos 1
+    const validPage = Math.max(1, Number(page) || 1);
+    const validLimit = Math.max(1, Number(limit) || 12);
+    
+    const skip = (validPage - 1) * validLimit;
     const filter: any = {};
 
     // Filtro por categoría (insensible a mayúsculas)
@@ -89,17 +93,17 @@ export class ProductsService {
         .find(filter, search && sortBy === 'relevance' ? { score: { $meta: 'textScore' } } : {})
         .sort(sort)
         .skip(skip)
-        .limit(Number(limit))
+        .limit(validLimit)
         .exec(),
       this.productModel.countDocuments(filter)
     ]);
 
-    const totalPages = Math.ceil(total / Number(limit));
+    const totalPages = Math.ceil(total / validLimit);
 
     return {
       products,
       total,
-      page: Number(page),
+      page: validPage,
       totalPages
     };
   }
