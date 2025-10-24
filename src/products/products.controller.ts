@@ -154,7 +154,7 @@ export class ProductsController {
       required: ['name', 'description', 'price', 'category', 'sizes', 'stockBySizes']
     } 
   })
-  @ApiResponse({ status: 201, description: 'Producto creado con imágenes. Límite máximo por imagen: 25MB.' })
+  @ApiResponse({ status: 201, description: 'Producto creado con imágenes. Límite máximo por imagen: 150MB.' })
   @Post()
   @UseInterceptors(
     FilesInterceptor('images', 10, {
@@ -176,7 +176,7 @@ export class ProductsController {
         }
       },
       limits: {
-        fileSize: 25 * 1024 * 1024, // 25MB por imagen
+        fileSize: 150 * 1024 * 1024, // 150MB por imagen
       },
     }),
   )
