@@ -129,9 +129,7 @@ export class OrdersService {
   }
 
   async getOrderById(id: string, userId: string) {
-    const order = await this.orderModel
-      .findOne({ _id: id, userId })
-      .populate('items.product');
+    const order = await this.orderModel.findOne({ _id: id, userId });
     if (!order) {
       throw new NotFoundException(`No se encontró un pedido con ID ${id} para el usuario con ID ${userId}`);
     }
@@ -142,7 +140,7 @@ export class OrdersService {
     if (user.role !== 'admin') {
       throw new ForbiddenException('Se requiere rol de administrador para consultar todos los pedidos');
     }
-    return this.orderModel.find().populate('items.product');
+    return this.orderModel.find().populate('items.product').exec();
   }
 
   async updateStatus(id: string, updateStatusDto: UpdateStatusDto, user: any) {
@@ -455,6 +453,22 @@ export class OrdersService {
       } else {
         console.log(`⚠️ [ORDER SERVICE] No se pudo obtener email/nombre del cliente para orden ${orderNumber}, omitiendo notificación por email`);
         this.logger.warn(`No customer email/name available for order ${orderNumber}, skipping email notification`);
+      }
+
+      // ✅ ENVIAR NOTIFICACIÓN AL ADMIN
+      console.log(`📧 [ORDER SERVICE] Preparando notificación al admin para orden ${orderNumber}`);
+      try {
+        await this.orderNotificationService.sendAdminNotificationEmail(
+          order,
+          finalCustomerEmail || 'No proporcionado',
+          finalCustomerName || 'Cliente'
+        );
+        console.log(`✅ [ORDER SERVICE] Notificación al admin enviada exitosamente para orden ${orderNumber}`);
+        this.logger.log(`Admin notification email sent for order ${orderNumber}`);
+      } catch (adminEmailError) {
+        console.log(`❌ [ORDER SERVICE] Error enviando notificación al admin para orden ${orderNumber}`, adminEmailError);
+        this.logger.error(`Failed to send admin notification email:`, adminEmailError);
+        // No lanzamos el error para no afectar la creación de la orden
       }
       
       return order;
