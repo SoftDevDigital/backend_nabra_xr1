@@ -11,10 +11,14 @@ import { UsersModule } from '../users/users.module';
 import { ShippingModule } from '../shipping/shipping.module';
 import { HttpModule } from '@nestjs/axios';
 import { CommonModule } from '../common/common.module';
+import { User, UserSchema } from '../auth/schemas/user.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Order.name, schema: OrderSchema }]),
+    MongooseModule.forFeature([
+      { name: Order.name, schema: OrderSchema },
+      { name: User.name, schema: UserSchema }
+    ]),
     forwardRef(() => CartModule),
     ProductsModule,
     forwardRef(() => UsersModule),

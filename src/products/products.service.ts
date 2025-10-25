@@ -515,7 +515,7 @@ export class ProductsService {
 
   // ===== MÉTODOS CON PROMOCIONES =====
 
-  async findByIdWithPromotions(productId: string): Promise<Product & { 
+  async findByIdWithPromotions(productId: string, quantity: number = 1): Promise<Product & { 
     originalPrice: number; 
     discountAmount: number; 
     finalPrice: number; 
@@ -529,7 +529,7 @@ export class ProductsService {
       const activePromotion = promotions.find(p => p.isActive);
       
       if (activePromotion) {
-        const discount = this.calculateProductDiscount(activePromotion, product.price);
+        const discount = this.calculateProductDiscount(activePromotion, product.price, quantity);
         
         return {
           ...product.toObject(),
@@ -575,7 +575,8 @@ export class ProductsService {
           const activePromotion = promotions.find(p => p.isActive);
           
           if (activePromotion) {
-            const discount = this.calculateProductDiscount(activePromotion, product.price);
+            // Usar cantidad 1 por defecto para el catálogo (se ajustará en carrito)
+            const discount = this.calculateProductDiscount(activePromotion, product.price, 1);
             
             return {
               ...product.toObject(),
@@ -607,18 +608,59 @@ export class ProductsService {
     };
   }
 
-  private calculateProductDiscount(promotion: any, originalPrice: number): {
+  private calculateProductDiscount(promotion: any, originalPrice: number, quantity: number = 1): {
     discountAmount: number;
     finalPrice: number;
   } {
     let discountAmount = 0;
 
+    // ✅ VALIDACIONES DE SEGURIDAD
+    if (quantity <= 0 || originalPrice <= 0) {
+      return {
+        discountAmount: 0,
+        finalPrice: Math.max(0, originalPrice),
+      };
+    }
+
     switch (promotion.type) {
       case 'percentage':
-        discountAmount = (originalPrice * promotion.discountPercentage) / 100;
+        // ✅ DESCUENTO PORCENTUAL - Se aplica al total de la cantidad
+        // Para 10 zapatillas de $100 con 20%: (100 * 10 * 20) / 100 = $200
+        discountAmount = (originalPrice * quantity * promotion.discountPercentage) / 100;
         break;
       case 'fixed_amount':
-        discountAmount = Math.min(promotion.discountAmount, originalPrice);
+        // ✅ DESCUENTO FIJO - Se aplica al total del carrito, no por producto
+        // En este contexto (por producto), no aplicamos descuento fijo
+        // El descuento fijo se maneja en el servicio de carrito
+        discountAmount = 0;
+        break;
+      case 'buy_x_get_y':
+        // ✅ LÓGICA CORRECTA PARA NxY
+        // N = buyQuantity (total que lleva)
+        // Y = getQuantity (lo que paga)
+        // Para 2x1: lleva 2, paga 1 (1 gratis)
+        // Para 3x1: lleva 3, paga 1 (2 gratis)
+        // Para 3x2: lleva 3, paga 2 (1 gratis)
+        if (promotion.buyQuantity && promotion.getQuantity && quantity >= promotion.buyQuantity) {
+          // Calcular cuántos sets completos puede obtener
+          // Un set = N productos totales (Y que paga + (N-Y) gratis)
+          const itemsPerSet = promotion.buyQuantity; // Total que lleva por set
+          const setsAvailable = Math.floor(quantity / itemsPerSet);
+          
+          if (setsAvailable > 0) {
+            // Calcular cuántos productos gratis obtiene por set
+            const freeItemsPerSet = promotion.buyQuantity - promotion.getQuantity; // N - Y = gratis por set
+            const totalFreeItems = setsAvailable * freeItemsPerSet;
+            // Los productos gratis no se cobran
+            discountAmount = totalFreeItems * originalPrice;
+          }
+        }
+        break;
+      case 'free_shipping':
+        // ✅ ENVÍO GRATIS - No afecta el precio del producto
+        // El descuento de envío se maneja en el servicio de shipping
+        // Aquí solo marcamos que tiene promoción de envío gratis
+        discountAmount = 0; // No descuenta del producto
         break;
       default:
         discountAmount = 0;

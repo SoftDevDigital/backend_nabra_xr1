@@ -20,6 +20,7 @@ import { OrderNumberService } from './services/order-number.service';
 import { OrderNotificationService } from './services/order-notification.service';
 import { DrEnvioService } from '../shipping/drenvio.service';
 import { CreateShipmentDto } from '../shipping/dtos/shipping-data.dto';
+import { User } from '../auth/schemas/user.schema';
 
 @Injectable()
 export class OrdersService {
@@ -27,6 +28,7 @@ export class OrdersService {
 
   constructor(
     @InjectModel(Order.name) private orderModel: Model<Order>,
+    @InjectModel(User.name) private userModel: Model<User>,
     private cartService: CartService,
     private productsService: ProductsService,
     private addressService: AddressService,
@@ -416,25 +418,43 @@ export class OrdersService {
       await order.save();
       this.logger.log(`Order created from payment: ${order._id} (${orderNumber}) for user ${paymentData.userId}`);
       
+      // ✅ VALIDACIÓN SIMPLE: Usar email del usuario logueado si no se proporciona email en shipping
+      let finalCustomerEmail = paymentData.customerEmail;
+      let finalCustomerName = paymentData.customerName;
+      
+      if (!finalCustomerEmail) {
+        try {
+          // Obtener email del usuario logueado
+          const user = await this.userModel.findById(paymentData.userId).select('email firstName lastName');
+          if (user && user.email) {
+            finalCustomerEmail = user.email;
+            finalCustomerName = finalCustomerName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Cliente';
+            console.log(`📧 [ORDER SERVICE] Usando email del usuario logueado: ${finalCustomerEmail} para orden ${orderNumber}`);
+          }
+        } catch (userError) {
+          console.log(`⚠️ [ORDER SERVICE] Error obteniendo email del usuario:`, userError.message);
+        }
+      }
+
       // Enviar email de confirmación si tenemos email del cliente
-      if (paymentData.customerEmail && paymentData.customerName) {
-        console.log(`📧 [ORDER SERVICE] Preparando envío de email de confirmación a: ${paymentData.customerEmail} para orden ${orderNumber}`);
+      if (finalCustomerEmail && finalCustomerName) {
+        console.log(`📧 [ORDER SERVICE] Preparando envío de email de confirmación a: ${finalCustomerEmail} para orden ${orderNumber}`);
         try {
           await this.orderNotificationService.sendOrderConfirmationEmail(
             order, 
-            paymentData.customerEmail, 
-            paymentData.customerName
+            finalCustomerEmail, 
+            finalCustomerName
           );
-          console.log(`✅ [ORDER SERVICE] Email de confirmación enviado exitosamente a: ${paymentData.customerEmail}`);
-          this.logger.log(`Order confirmation email sent to ${paymentData.customerEmail}`);
+          console.log(`✅ [ORDER SERVICE] Email de confirmación enviado exitosamente a: ${finalCustomerEmail}`);
+          this.logger.log(`Order confirmation email sent to ${finalCustomerEmail}`);
         } catch (emailError) {
-          console.log(`❌ [ORDER SERVICE] Error enviando email de confirmación a: ${paymentData.customerEmail}`, emailError);
+          console.log(`❌ [ORDER SERVICE] Error enviando email de confirmación a: ${finalCustomerEmail}`, emailError);
           this.logger.error(`Failed to send order confirmation email:`, emailError);
           // No lanzamos el error para no afectar la creación de la orden
         }
       } else {
-        console.log(`⚠️ [ORDER SERVICE] No se proporcionó email/nombre del cliente para orden ${orderNumber}, omitiendo notificación por email`);
-        this.logger.warn(`No customer email/name provided for order ${orderNumber}, skipping email notification`);
+        console.log(`⚠️ [ORDER SERVICE] No se pudo obtener email/nombre del cliente para orden ${orderNumber}, omitiendo notificación por email`);
+        this.logger.warn(`No customer email/name available for order ${orderNumber}, skipping email notification`);
       }
       
       return order;

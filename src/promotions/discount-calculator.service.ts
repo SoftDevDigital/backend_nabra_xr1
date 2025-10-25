@@ -428,14 +428,29 @@ export class DiscountCalculatorService {
 
     Object.values(itemsByProduct).forEach((productItems: any) => {
       const totalQuantity = productItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
-      const setsAvailable = Math.floor(totalQuantity / (buyQuantity + getQuantity));
+      
+      // ✅ LÓGICA CORRECTA PARA NxY:
+      // N = buyQuantity (total que lleva)
+      // Y = getQuantity (lo que paga)
+      // Para 2x1: lleva 2, paga 1 (1 gratis)
+      // Para 3x1: lleva 3, paga 1 (2 gratis)
+      // Para 3x2: lleva 3, paga 2 (1 gratis)
+      
+      // Calcular cuántos sets completos puede obtener
+      // Un set = N productos totales (Y que paga + (N-Y) gratis)
+      const itemsPerSet = buyQuantity; // Total que lleva por set
+      const setsAvailable = Math.floor(totalQuantity / itemsPerSet);
 
       if (setsAvailable > 0) {
-        const freeItems = setsAvailable * getQuantity;
+        // Calcular cuántos productos gratis obtiene por set
+        const freeItemsPerSet = buyQuantity - getQuantity; // N - Y = gratis por set
+        const totalFreeItems = setsAvailable * freeItemsPerSet;
         const itemPrice = productItems[0].price;
-        const discountPerItem = (itemPrice * getDiscountPercentage) / 100;
         
-        totalDiscount += freeItems * discountPerItem;
+        // El descuento es el valor de los productos gratis
+        const discountPerItem = (itemPrice * getDiscountPercentage) / 100;
+        totalDiscount += totalFreeItems * discountPerItem;
+        
         appliedToItems.push(...productItems.map((item: any) => item.cartItemId));
       }
     });
@@ -443,7 +458,7 @@ export class DiscountCalculatorService {
     return {
       discountAmount: totalDiscount,
       appliedToItems,
-      description: `Compra ${buyQuantity} lleva ${getQuantity} con ${getDiscountPercentage}% descuento`,
+      description: `Lleva ${buyQuantity} paga ${getQuantity} (${buyQuantity - getQuantity} gratis)`,
     };
   }
 
