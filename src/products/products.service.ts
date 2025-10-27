@@ -179,24 +179,8 @@ export class ProductsService {
     // Crear stockBySize a partir de los talles y stock individual por talle
     let stockBySize: { [size: string]: number } = {};
     
-    // 1. Primero intentar con stockBySize directamente (si viene como objeto)
-    if (createProductDto.stockBySize) {
-      console.log('✅ Using stockBySize object:', createProductDto.stockBySize);
-      stockBySize = createProductDto.stockBySize;
-    } 
-    // 2. Si viene stockBySizes string en formato "35:10,36:20,37:15"
-    else if (createProductDto.stockBySizes) {
-      console.log('✅ Using stockBySizes string:', createProductDto.stockBySizes);
-      const stockEntries = createProductDto.stockBySizes.split(',');
-      stockEntries.forEach(entry => {
-        const [size, stock] = entry.trim().split(':');
-        if (size && stock) {
-          stockBySize[size.trim()] = parseInt(stock.trim());
-        }
-      });
-    } 
-    // 3. Si viene como campos anidados en form-data: stockBySize[35], stockBySize[36], etc.
-    else if (rawBody) {
+    // PRIMERO: buscar campos anidados en form-data (stockBySize[35], stockBySize[36], etc.)
+    if (rawBody) {
       console.log('🔍 Searching for nested stockBySize fields in rawBody');
       const nestedStock: { [size: string]: number } = {};
       
@@ -216,6 +200,28 @@ export class ProductsService {
       if (Object.keys(nestedStock).length > 0) {
         console.log('✅ Built stockBySize from nested fields:', nestedStock);
         stockBySize = nestedStock;
+      }
+    }
+    
+    // SEGUNDO: intentar con stockBySize directamente (si viene como objeto válido)
+    if (!stockBySize || Object.keys(stockBySize).length === 0) {
+      if (createProductDto.stockBySize && typeof createProductDto.stockBySize === 'object' && !Array.isArray(createProductDto.stockBySize)) {
+        console.log('✅ Using stockBySize object:', createProductDto.stockBySize);
+        stockBySize = createProductDto.stockBySize;
+      }
+    }
+    
+    // TERCERO: Si viene stockBySizes string en formato "35:10,36:20,37:15"
+    if (!stockBySize || Object.keys(stockBySize).length === 0) {
+      if (createProductDto.stockBySizes) {
+        console.log('✅ Using stockBySizes string:', createProductDto.stockBySizes);
+        const stockEntries = createProductDto.stockBySizes.split(',');
+        stockEntries.forEach(entry => {
+          const [size, stock] = entry.trim().split(':');
+          if (size && stock) {
+            stockBySize[size.trim()] = parseInt(stock.trim());
+          }
+        });
       }
     }
     
