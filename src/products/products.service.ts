@@ -146,6 +146,7 @@ export class ProductsService {
     createProductDto: any,
     images: Express.Multer.File[],
     user: any,
+    rawBody?: any,
   ): Promise<Product> {
     if (user.role !== 'admin') {
       throw new ForbiddenException('Only admins can create products');
@@ -165,29 +166,68 @@ export class ProductsService {
     // Preparar datos del producto (sizes ya viene como array desde el DTO)
     const sizes = createProductDto.sizes || [];
 
+    console.log('📦 Creating product with sizes:', sizes);
+    console.log('📦 stockBySize:', createProductDto.stockBySize);
+    console.log('📦 stockBySizes:', createProductDto.stockBySizes);
+    
+    // Log rawBody para debug
+    if (rawBody) {
+      console.log('📦 Raw body keys:', Object.keys(rawBody));
+      console.log('📦 Raw body:', JSON.stringify(rawBody, null, 2));
+    }
+
     // Crear stockBySize a partir de los talles y stock individual por talle
     let stockBySize: { [size: string]: number } = {};
+    
+    // 1. Primero intentar con stockBySize directamente (si viene como objeto)
     if (createProductDto.stockBySize) {
-      // Si viene stockBySize directamente (objeto)
+      console.log('✅ Using stockBySize object:', createProductDto.stockBySize);
       stockBySize = createProductDto.stockBySize;
-    } else {
-      // Si viene stock individual por talle en el formato: "35:10,36:20,37:15"
-      if (createProductDto.stockBySizes) {
-        const stockEntries = createProductDto.stockBySizes.split(',');
-        stockEntries.forEach(entry => {
-          const [size, stock] = entry.trim().split(':');
-          if (size && stock) {
-            stockBySize[size.trim()] = parseInt(stock.trim());
+    } 
+    // 2. Si viene stockBySizes string en formato "35:10,36:20,37:15"
+    else if (createProductDto.stockBySizes) {
+      console.log('✅ Using stockBySizes string:', createProductDto.stockBySizes);
+      const stockEntries = createProductDto.stockBySizes.split(',');
+      stockEntries.forEach(entry => {
+        const [size, stock] = entry.trim().split(':');
+        if (size && stock) {
+          stockBySize[size.trim()] = parseInt(stock.trim());
+        }
+      });
+    } 
+    // 3. Si viene como campos anidados en form-data: stockBySize[35], stockBySize[36], etc.
+    else if (rawBody) {
+      console.log('🔍 Searching for nested stockBySize fields in rawBody');
+      const nestedStock: { [size: string]: number } = {};
+      
+      for (const key in rawBody) {
+        console.log(`   - Checking key: "${key}"`);
+        if (key.startsWith('stockBySize[') && key.endsWith(']')) {
+          const size = key.slice(12, -1); // Extraer el tamaño entre corchetes
+          const stockValue = rawBody[key];
+          console.log(`   ✅ Found: stockBySize[${size}] = ${stockValue}`);
+          const stock = parseInt(stockValue);
+          if (!isNaN(stock)) {
+            nestedStock[size] = stock;
           }
-        });
-      } else {
-        // Fallback: distribuir stock general entre talles (solo para compatibilidad)
-        const stockPerSize = createProductDto.stock ? Math.floor(parseInt(createProductDto.stock) / sizes.length) : 0;
-        sizes.forEach(size => {
-          stockBySize[size] = stockPerSize;
-        });
+        }
+      }
+      
+      if (Object.keys(nestedStock).length > 0) {
+        console.log('✅ Built stockBySize from nested fields:', nestedStock);
+        stockBySize = nestedStock;
       }
     }
+    
+    // 4. Si no se encontró ningún dato de stock, usar 0 por defecto
+    if (Object.keys(stockBySize).length === 0) {
+      console.log('⚠️ WARNING: No stock data provided. Defaulting all sizes to 0');
+      sizes.forEach(size => {
+        stockBySize[size] = 0;
+      });
+    }
+
+    console.log('📦 Final stockBySize:', stockBySize);
 
     const productData = {
       name: createProductDto.name,

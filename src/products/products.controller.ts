@@ -143,15 +143,17 @@ export class ProductsController {
       properties: { 
         name: { type: 'string', description: 'Nombre del producto' },
         description: { type: 'string', description: 'Descripción del producto' },
-        price: { type: 'number', description: 'Precio del producto' },
+        price: { type: 'string', description: 'Precio del producto (form-data)' },
         category: { type: 'string', description: 'Categoría del producto' },
         sizes: { type: 'string', description: 'Tallas separadas por coma (ej: "35,36,37")' },
-        stockBySizes: { type: 'string', description: 'Stock por talle separado por coma (ej: "35:10,36:20,37:15")' },
-        isPreorder: { type: 'boolean', description: 'Es preventa (opcional)' },
-        isFeatured: { type: 'boolean', description: 'Es destacado (opcional)' },
+        stockBySizes: { type: 'string', description: 'Stock por talle separado por coma (ej: "35:10,36:20,37:15") - Formato alternativo 1' },
+        stockBySize: { type: 'object', description: 'Objeto con stock por talle (ej: {"35": 10, "36": 20}) - Formato alternativo 2' },
+        'stockBySize[size]': { type: 'string', description: 'Campos individuales para cada talle (ej: stockBySize[35]=10, stockBySize[36]=20) - Formato alternativo 3 - REQUERIDO si no se usa stockBySizes' },
+        isPreorder: { type: 'string', description: 'Es preventa (opcional, "true" o "false")' },
+        isFeatured: { type: 'string', description: 'Es destacado (opcional, "true" o "false")' },
         images: { type: 'array', items: { type: 'string', format: 'binary' }, description: 'Imágenes del producto' }
       },
-      required: ['name', 'description', 'price', 'category', 'sizes', 'stockBySizes']
+      required: ['name', 'description', 'price', 'category', 'sizes']
     } 
   })
   @ApiResponse({ status: 201, description: 'Producto creado con imágenes. Límite máximo por imagen: 150MB.' })
@@ -185,7 +187,8 @@ export class ProductsController {
     @UploadedFiles() images: Express.Multer.File[],
     @Request() req,
   ): Promise<Product> {
-    return this.productsService.createWithImages(createProductDto, images, req.user);
+    // Pasar el rawBody (form-data sin procesar) para detectar campos anidados
+    return this.productsService.createWithImages(createProductDto, images, req.user, req.body);
   }
 
   @Roles('admin')
