@@ -180,6 +180,7 @@ export class ProductsController {
       limits: {
         fileSize: 150 * 1024 * 1024, // 150MB por imagen
       },
+      preservePath: true, // Preservar campos con corchetes como stockBySize[35]
     }),
   )
   async create(
@@ -187,8 +188,17 @@ export class ProductsController {
     @UploadedFiles() images: Express.Multer.File[],
     @Request() req,
   ): Promise<Product> {
-    // Pasar el rawBody (form-data sin procesar) para detectar campos anidados
-    return this.productsService.createWithImages(createProductDto, images, req.user, req.body);
+    // DEBUG: Ver exactamente qué está llegando
+    console.log('🔍 Controller - req.body keys:', Object.keys(req.body));
+    console.log('🔍 Controller - req.body:', JSON.stringify(req.body, null, 2));
+    console.log('🔍 Controller - createProductDto keys:', Object.keys(createProductDto));
+    console.log('🔍 Controller - createProductDto:', JSON.stringify(createProductDto, null, 2));
+    
+    // El problema: req.body ya está procesado por NestJS y puede que no contenga stockBySize[35]
+    // Necesitamos acceder al body crudo antes del procesamiento
+    const rawBody = req.body;
+    
+    return this.productsService.createWithImages(createProductDto, images, req.user, rawBody);
   }
 
   @Roles('admin')

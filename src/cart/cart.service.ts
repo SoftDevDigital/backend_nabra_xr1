@@ -268,10 +268,11 @@ export class CartService {
         throw new BadRequestException('Maximum quantity per item is 99');
       }
 
-      // Validar stock para la nueva cantidad
+      // Validar stock para la nueva cantidad usando el size actual del item
       const stockCheck = await this.productsService.checkStockAvailability(
         productId, 
-        updateCartDto.quantity
+        updateCartDto.quantity,
+        item.size // Usar el size actual del item del carrito
       );
 
       if (!stockCheck.available) {
@@ -289,6 +290,17 @@ export class CartService {
 
       if (updateCartDto.size && product.sizes && !product.sizes.includes(updateCartDto.size)) {
         throw new BadRequestException(`Size ${updateCartDto.size} is not available for this product`);
+      }
+
+      // Validar stock disponible en el nuevo tamaño
+      const stockCheckForNewSize = await this.productsService.checkStockAvailability(
+        productId,
+        item.quantity, // Usar la cantidad actual del item
+        updateCartDto.size
+      );
+
+      if (!stockCheckForNewSize.available) {
+        throw new BadRequestException(`Insufficient stock for size ${updateCartDto.size}. ${stockCheckForNewSize.message}`);
       }
 
       cart.items[itemIndex].size = updateCartDto.size;

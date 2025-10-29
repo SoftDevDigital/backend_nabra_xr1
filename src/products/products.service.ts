@@ -175,6 +175,10 @@ export class ProductsService {
       console.log('📦 Raw body keys:', Object.keys(rawBody));
       console.log('📦 Raw body:', JSON.stringify(rawBody, null, 2));
     }
+    
+    // Log createProductDto para debug
+    console.log('📦 createProductDto keys:', Object.keys(createProductDto));
+    console.log('📦 createProductDto:', JSON.stringify(createProductDto, null, 2));
 
     // Crear stockBySize a partir de los talles y stock individual por talle
     let stockBySize: { [size: string]: number } = {};
@@ -203,6 +207,71 @@ export class ProductsService {
       }
     }
     
+    // PRIMERO.5: buscar campos anidados también en createProductDto (por si NestJS los procesa)
+    if (!stockBySize || Object.keys(stockBySize).length === 0) {
+      console.log('🔍 Searching for nested stockBySize fields in createProductDto');
+      const nestedStock: { [size: string]: number } = {};
+      
+      for (const key in createProductDto) {
+        console.log(`   - Checking key: "${key}"`);
+        if (key.startsWith('stockBySize[') && key.endsWith(']')) {
+          const size = key.slice(12, -1); // Extraer el tamaño entre corchetes
+          const stockValue = createProductDto[key];
+          console.log(`   ✅ Found: stockBySize[${size}] = ${stockValue}`);
+          const stock = parseInt(stockValue);
+          if (!isNaN(stock)) {
+            nestedStock[size] = stock;
+          }
+        }
+      }
+      
+      if (Object.keys(nestedStock).length > 0) {
+        console.log('✅ Built stockBySize from createProductDto nested fields:', nestedStock);
+        stockBySize = nestedStock;
+      }
+    }
+    
+    // PRIMERO.6: buscar campos con formato diferente (por si multer los procesa de otra manera)
+    if (!stockBySize || Object.keys(stockBySize).length === 0) {
+      console.log('🔍 Searching for alternative stockBySize field formats');
+      
+      // Buscar campos que contengan "stockBySize" en el nombre
+      for (const key in createProductDto) {
+        if (key.includes('stockBySize') && key !== 'stockBySize' && key !== 'stockBySizes') {
+          console.log(`   - Found alternative field: "${key}" = ${createProductDto[key]}`);
+          
+          // Intentar extraer el tamaño del nombre del campo
+          const match = key.match(/stockBySize\[?([^\]]+)\]?/);
+          if (match) {
+            const size = match[1];
+            const stockValue = createProductDto[key];
+            const stock = parseInt(stockValue);
+            if (!isNaN(stock)) {
+              stockBySize[size] = stock;
+              console.log(`   ✅ Added: ${size} = ${stock}`);
+            }
+          }
+        }
+      }
+      
+      if (Object.keys(stockBySize).length > 0) {
+        console.log('✅ Built stockBySize from alternative formats:', stockBySize);
+      }
+    }
+    
+    // PRIMERO.7: Si aún no tenemos stockBySize, intentar construir desde los talles con valores por defecto
+    if (!stockBySize || Object.keys(stockBySize).length === 0) {
+      console.log('🔍 No stockBySize found, checking if we can infer from sizes');
+      
+      // Si tenemos talles pero no stock, usar 0 por defecto
+      if (sizes && sizes.length > 0) {
+        console.log('⚠️ WARNING: No stock data provided. Defaulting all sizes to 0');
+        sizes.forEach(size => {
+          stockBySize[size] = 0;
+        });
+      }
+    }
+    
     // SEGUNDO: intentar con stockBySize directamente (si viene como objeto válido)
     if (!stockBySize || Object.keys(stockBySize).length === 0) {
       if (createProductDto.stockBySize && typeof createProductDto.stockBySize === 'object' && !Array.isArray(createProductDto.stockBySize)) {
@@ -225,14 +294,6 @@ export class ProductsService {
       }
     }
     
-    // 4. Si no se encontró ningún dato de stock, usar 0 por defecto
-    if (Object.keys(stockBySize).length === 0) {
-      console.log('⚠️ WARNING: No stock data provided. Defaulting all sizes to 0');
-      sizes.forEach(size => {
-        stockBySize[size] = 0;
-      });
-    }
-
     console.log('📦 Final stockBySize:', stockBySize);
 
     const productData = {
