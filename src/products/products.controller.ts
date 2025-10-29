@@ -24,6 +24,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { MediaService } from '../media/media.service';
+import { RawBodyInterceptor } from './interceptors/raw-body.interceptor';
 
 @ApiTags('Products')
 @Controller('products')
@@ -159,6 +160,7 @@ export class ProductsController {
   @ApiResponse({ status: 201, description: 'Producto creado con imágenes. Límite máximo por imagen: 150MB.' })
   @Post()
   @UseInterceptors(
+    RawBodyInterceptor,
     FilesInterceptor('images', 10, {
       storage: diskStorage({
         destination: './uploads',
@@ -194,9 +196,8 @@ export class ProductsController {
     console.log('🔍 Controller - createProductDto keys:', Object.keys(createProductDto));
     console.log('🔍 Controller - createProductDto:', JSON.stringify(createProductDto, null, 2));
     
-    // El problema: req.body ya está procesado por NestJS y puede que no contenga stockBySize[35]
-    // Necesitamos acceder al body crudo antes del procesamiento
-    const rawBody = req.body;
+    // Usar el rawBody capturado por el interceptor antes del procesamiento de NestJS
+    const rawBody = req.rawBody || req.body;
     
     return this.productsService.createWithImages(createProductDto, images, req.user, rawBody);
   }
