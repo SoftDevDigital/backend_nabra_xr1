@@ -183,8 +183,14 @@ export class ProductsService {
     // Crear stockBySize a partir de los talles y stock individual por talle
     let stockBySize: { [size: string]: number } = {};
     
-    // PRIMERO: buscar campos anidados en form-data (stockBySize[35], stockBySize[36], etc.)
-    if (rawBody) {
+    // PRIMERO: verificar si stockBySize viene directamente como objeto válido
+    if (createProductDto.stockBySize && typeof createProductDto.stockBySize === 'object' && !Array.isArray(createProductDto.stockBySize)) {
+      console.log('✅ Using stockBySize object directly:', createProductDto.stockBySize);
+      stockBySize = createProductDto.stockBySize;
+    }
+    
+    // SEGUNDO: buscar campos anidados en form-data (stockBySize[35], stockBySize[36], etc.)
+    if ((!stockBySize || Object.keys(stockBySize).length === 0) && rawBody) {
       console.log('🔍 Searching for nested stockBySize fields in rawBody');
       const nestedStock: { [size: string]: number } = {};
       
@@ -272,13 +278,7 @@ export class ProductsService {
       }
     }
     
-    // SEGUNDO: intentar con stockBySize directamente (si viene como objeto válido)
-    if (!stockBySize || Object.keys(stockBySize).length === 0) {
-      if (createProductDto.stockBySize && typeof createProductDto.stockBySize === 'object' && !Array.isArray(createProductDto.stockBySize)) {
-        console.log('✅ Using stockBySize object:', createProductDto.stockBySize);
-        stockBySize = createProductDto.stockBySize;
-      }
-    }
+    // SEGUNDO: intentar con stockBySize directamente (si viene como objeto válido) - YA PROCESADO ARRIBA
     
     // TERCERO: Si viene stockBySizes string en formato "35:10,36:20,37:15"
     if (!stockBySize || Object.keys(stockBySize).length === 0) {
